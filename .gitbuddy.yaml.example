@@ -1,0 +1,49 @@
+# GitBuddy Configuration File
+# Documentation: https://github.com/huimingz/gitbuddy-go
+
+# Default model to use (must match a key in the models section)
+default_model: deepseek
+
+# Model configurations
+models:
+  # Deepseek (recommended for Chinese users)
+  deepseek:
+    provider: deepseek
+    api_key: ${DEEPSEEK_API_KEY}
+    model: deepseek-chat
+    # base_url: https://api.deepseek.com/v1  # optional, has default value
+
+  # OpenAI GPT-4
+  # gpt4:
+  #   provider: openai
+  #   api_key: ${OPENAI_API_KEY}
+  #   model: gpt-4o
+
+  # OpenAI GPT-4 Mini (cheaper)
+  # gpt4-mini:
+  #   provider: openai
+  #   api_key: ${OPENAI_API_KEY}
+  #   model: gpt-4o-mini
+
+  # Local Ollama
+  # ollama:
+  #   provider: ollama
+  #   model: qwen2.5:14b
+  #   base_url: http://localhost:11434/v1
+
+  # Google Gemini
+  # gemini:
+  #   provider: gemini
+  #   api_key: ${GEMINI_API_KEY}
+  #   model: gemini-1.5-pro
+
+  # xAI Grok
+  # grok:
+  #   provider: grok
+  #   api_key: ${XAI_API_KEY}
+  #   model: grok-beta
+  #   base_url: https://api.x.ai/v1
+
+# Default output language (en, zh, zh-tw, ja, ko)
+language: en
+
