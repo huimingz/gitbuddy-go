@@ -1,0 +1,85 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Run tests
+        run: go test -v ./...
+
+      - name: Build binaries
+        run: |
+          mkdir -p dist
+          
+          # Build for multiple platforms
+          platforms=(
+            "linux/amd64"
+            "linux/arm64"
+            "darwin/amd64"
+            "darwin/arm64"
+            "windows/amd64"
+          )
+          
+          version=${GITHUB_REF_NAME}
+          
+          for platform in "${platforms[@]}"; do
+            GOOS=${platform%/*}
+            GOARCH=${platform#*/}
+            
+            output_name="gitbuddy-${version}-${GOOS}-${GOARCH}"
+            if [ "$GOOS" = "windows" ]; then
+              output_name="${output_name}.exe"
+            fi
+            
+            echo "Building for ${GOOS}/${GOARCH}..."
+            
+            GOOS=$GOOS GOARCH=$GOARCH go build \
+              -ldflags "-s -w -X github.com/huimingz/gitbuddy-go/internal/cli.Version=${version}" \
+              -o "dist/${output_name}" \
+              ./cmd/gitbuddy
+            
+            # Create archive
+            cd dist
+            if [ "$GOOS" = "windows" ]; then
+              zip "${output_name%.exe}.zip" "${output_name}"
+            else
+              tar -czf "${output_name}.tar.gz" "${output_name}"
+            fi
+            rm "${output_name}"
+            cd ..
+          done
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum * > checksums.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+
