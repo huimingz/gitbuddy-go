@@ -104,8 +104,11 @@ func CommitInfoFromToolParams(params *tools.SubmitCommitParams) *CommitInfo {
 
 // CommitResponse represents the generated commit message
 type CommitResponse struct {
-	CommitInfo *CommitInfo // Structured commit information
-	Message    string      // Complete formatted commit message
+	CommitInfo       *CommitInfo // Structured commit information
+	Message          string      // Complete formatted commit message
+	PromptTokens     int         // Number of tokens in the prompt
+	CompletionTokens int         // Number of tokens in the completion
+	TotalTokens      int         // Total tokens used
 }
 
 // CommitAgentOptions contains configuration for CommitAgent
@@ -220,13 +223,17 @@ func (a *CommitAgent) GenerateCommitMessage(ctx context.Context, req CommitReque
 		return nil, fmt.Errorf("LLM provider is not configured")
 	}
 
-	printProgress("Initializing LLM provider...")
+	providerName := a.opts.LLMProvider.Name()
+	modelName := a.opts.LLMProvider.GetConfig().Model
+	printProgress(fmt.Sprintf("Initializing LLM provider (%s/%s)...", providerName, modelName))
+	log.Debug("Using LLM: provider=%s, model=%s", providerName, modelName)
+
 	chatModel, err := a.opts.LLMProvider.CreateChatModel(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create chat model: %w", err)
 	}
 	if chatModel == nil {
-		return nil, fmt.Errorf("chat model is nil (provider: %s)", a.opts.LLMProvider.Name())
+		return nil, fmt.Errorf("chat model is nil (provider: %s)", providerName)
 	}
 
 	// Step 1: Get git status overview (progressive analysis)
@@ -347,6 +354,7 @@ func (a *CommitAgent) GenerateCommitMessage(ctx context.Context, req CommitReque
 	var fullContent strings.Builder
 	var toolCalls []*schema.ToolCall
 	var streamStarted bool
+	var promptTokens, completionTokens, totalTokens int
 
 	printInfo("LLM Response:")
 	if printer != nil {
@@ -394,11 +402,29 @@ func (a *CommitAgent) GenerateCommitMessage(ctx context.Context, req CommitReque
 
 				// Accumulate function name and arguments
 				if tc.Function.Name != "" {
+					// Show tool call immediately when we first see the name
+					if toolCalls[idx].Function.Name == "" {
+						printToolCall(fmt.Sprintf("%s (from LLM)", tc.Function.Name))
+					}
 					toolCalls[idx].Function.Name = tc.Function.Name
 				}
 				if tc.Function.Arguments != "" {
 					toolCalls[idx].Function.Arguments += tc.Function.Arguments
 				}
+			}
+		}
+
+		// Collect token usage from ResponseMeta (usually in the last chunk)
+		if chunk.ResponseMeta != nil && chunk.ResponseMeta.Usage != nil {
+			usage := chunk.ResponseMeta.Usage
+			if usage.PromptTokens > promptTokens {
+				promptTokens = usage.PromptTokens
+			}
+			if usage.CompletionTokens > completionTokens {
+				completionTokens = usage.CompletionTokens
+			}
+			if usage.TotalTokens > totalTokens {
+				totalTokens = usage.TotalTokens
 			}
 		}
 	}
@@ -418,7 +444,6 @@ func (a *CommitAgent) GenerateCommitMessage(ctx context.Context, req CommitReque
 			if toolCall.Function.Name == "" {
 				continue
 			}
-			printToolCall("submit_commit (from LLM)")
 			log.Debug("Tool call: %s with args: %s", toolCall.Function.Name, toolCall.Function.Arguments)
 
 			if toolCall.Function.Name == "submit_commit" {
@@ -439,8 +464,11 @@ func (a *CommitAgent) GenerateCommitMessage(ctx context.Context, req CommitReque
 				printSuccess("Commit message generated successfully")
 
 				return &CommitResponse{
-					CommitInfo: commitInfo,
-					Message:    commitInfo.Message(),
+					CommitInfo:       commitInfo,
+					Message:          commitInfo.Message(),
+					PromptTokens:     promptTokens,
+					CompletionTokens: completionTokens,
+					TotalTokens:      totalTokens,
 				}, nil
 			}
 		}
@@ -455,6 +483,10 @@ func (a *CommitAgent) GenerateCommitMessage(ctx context.Context, req CommitReque
 		result, err := parseTextResponse(content)
 		if err == nil {
 			printSuccess("Commit message parsed from text response")
+			// Add token usage to result
+			result.PromptTokens = promptTokens
+			result.CompletionTokens = completionTokens
+			result.TotalTokens = totalTokens
 		}
 		return result, err
 	}

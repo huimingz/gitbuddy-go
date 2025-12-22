@@ -159,8 +159,11 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	// Print stats
 	endTime := time.Now()
 	stats := &ui.ExecutionStats{
-		StartTime: startTime,
-		EndTime:   endTime,
+		StartTime:        startTime,
+		EndTime:          endTime,
+		PromptTokens:     response.PromptTokens,
+		CompletionTokens: response.CompletionTokens,
+		TotalTokens:      response.TotalTokens,
 	}
 	_ = printer.PrintStats(stats)
 
