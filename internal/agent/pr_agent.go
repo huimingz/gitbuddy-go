@@ -387,11 +387,19 @@ func (a *PRAgent) GeneratePRDescription(ctx context.Context, req PRRequest) (*PR
 				if tc.Function.Name != "" {
 					if toolCalls[idx].Function.Name == "" {
 						printToolCall(fmt.Sprintf("%s (from LLM)", tc.Function.Name))
+						// Start argument display
+						if printer != nil {
+							_ = printer.PrintToolArgStart()
+						}
 					}
 					toolCalls[idx].Function.Name = tc.Function.Name
 				}
 				if tc.Function.Arguments != "" {
 					toolCalls[idx].Function.Arguments += tc.Function.Arguments
+					// Stream the argument chunk in real-time
+					if printer != nil {
+						_ = printer.PrintToolArgChunk(tc.Function.Arguments)
+					}
 				}
 			}
 		}

@@ -221,6 +221,42 @@ func (p *StreamPrinter) Newline() error {
 	return err
 }
 
+// PrintToolArgChunk prints a chunk of tool call arguments in real-time
+// This allows users to see the tool call parameters as they stream in
+func (p *StreamPrinter) PrintToolArgChunk(chunk string) error {
+	var err error
+	if p.colorEnabled {
+		dim := color.New(color.FgHiBlack)
+		_, err = dim.Fprint(p.writer, chunk)
+	} else {
+		_, err = fmt.Fprint(p.writer, chunk)
+	}
+
+	// Try to flush immediately for real-time output
+	if f, ok := p.writer.(Flusher); ok {
+		_ = f.Flush()
+	}
+
+	return err
+}
+
+// PrintToolArgStart prints the start of tool arguments display
+func (p *StreamPrinter) PrintToolArgStart() error {
+	if p.colorEnabled {
+		dim := color.New(color.FgHiBlack)
+		_, err := dim.Fprint(p.writer, "   └─ ")
+		return err
+	}
+	_, err := fmt.Fprint(p.writer, "   └─ ")
+	return err
+}
+
+// PrintToolArgEnd prints the end of tool arguments display
+func (p *StreamPrinter) PrintToolArgEnd() error {
+	_, err := fmt.Fprintln(p.writer)
+	return err
+}
+
 // formatDuration formats a duration in a human-readable format
 func formatDuration(d time.Duration) string {
 	if d < time.Second {

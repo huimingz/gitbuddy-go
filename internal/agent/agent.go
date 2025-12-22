@@ -405,11 +405,19 @@ func (a *CommitAgent) GenerateCommitMessage(ctx context.Context, req CommitReque
 					// Show tool call immediately when we first see the name
 					if toolCalls[idx].Function.Name == "" {
 						printToolCall(fmt.Sprintf("%s (from LLM)", tc.Function.Name))
+						// Start argument display
+						if printer != nil {
+							_ = printer.PrintToolArgStart()
+						}
 					}
 					toolCalls[idx].Function.Name = tc.Function.Name
 				}
 				if tc.Function.Arguments != "" {
 					toolCalls[idx].Function.Arguments += tc.Function.Arguments
+					// Stream the argument chunk in real-time
+					if printer != nil {
+						_ = printer.PrintToolArgChunk(tc.Function.Arguments)
+					}
 				}
 			}
 		}
