@@ -129,3 +129,35 @@ func ShowPRDescription(pr PRDescriptionDisplayer, output io.Writer) error {
 	_, err = cyan.Fprintln(output, "═══════════════════════════════════════════════════════════════════════════════")
 	return err
 }
+
+// ReportDisplayer is an interface for report responses that can be displayed
+type ReportDisplayer interface {
+	GetTitle() string
+	GetContent() string
+}
+
+// ShowReport displays a formatted development report
+func ShowReport(report ReportDisplayer, output io.Writer) error {
+	bold := color.New(color.Bold)
+	cyan := color.New(color.FgCyan)
+
+	// Header
+	_, err := bold.Fprintln(output, "\n📊 Generated Development Report:")
+	if err != nil {
+		return err
+	}
+
+	_, err = cyan.Fprintln(output, "════════════════════════════════════════════════════════════════════════════════")
+	if err != nil {
+		return err
+	}
+
+	// Report content
+	_, err = fmt.Fprintln(output, report.GetContent())
+	if err != nil {
+		return err
+	}
+
+	_, err = cyan.Fprintln(output, "════════════════════════════════════════════════════════════════════════════════")
+	return err
+}
