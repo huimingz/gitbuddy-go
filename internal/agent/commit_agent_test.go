@@ -4,10 +4,30 @@ import (
 	"context"
 	"testing"
 
+	"github.com/cloudwego/eino/components/model"
 	"github.com/huimingz/gitbuddy-go/internal/agent/tools"
+	"github.com/huimingz/gitbuddy-go/internal/config"
+	"github.com/huimingz/gitbuddy-go/internal/git"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// MockLLMProvider is a mock implementation of llm.Provider for testing
+type MockLLMProvider struct {
+	cfg config.ModelConfig
+}
+
+func (m *MockLLMProvider) Name() string {
+	return "mock"
+}
+
+func (m *MockLLMProvider) GetConfig() config.ModelConfig {
+	return m.cfg
+}
+
+func (m *MockLLMProvider) CreateChatModel(ctx context.Context) (model.ChatModel, error) {
+	return nil, nil
+}
 
 func TestCommitInfo_Title(t *testing.T) {
 	tests := []struct {
@@ -169,8 +189,13 @@ func TestCommitInfoFromToolParams(t *testing.T) {
 }
 
 func TestNewCommitAgent(t *testing.T) {
+	mockProvider := &MockLLMProvider{cfg: config.ModelConfig{Provider: "mock", Model: "test"}}
+	mockExecutor := &MockGitExecutor{}
+
 	opts := CommitAgentOptions{
-		Language: "en",
+		Language:    "en",
+		LLMProvider: mockProvider,
+		GitExecutor: mockExecutor,
 	}
 
 	agent, err := NewCommitAgent(opts)
@@ -179,19 +204,45 @@ func TestNewCommitAgent(t *testing.T) {
 }
 
 func TestCommitAgentOptions_Validate(t *testing.T) {
+	mockProvider := &MockLLMProvider{cfg: config.ModelConfig{Provider: "mock", Model: "test"}}
+	mockExecutor := &MockGitExecutor{}
+
 	t.Run("valid options", func(t *testing.T) {
 		opts := CommitAgentOptions{
-			Language: "en",
+			Language:    "en",
+			LLMProvider: mockProvider,
+			GitExecutor: mockExecutor,
 		}
 		err := opts.Validate()
 		assert.NoError(t, err)
 	})
 
 	t.Run("empty language defaults to en", func(t *testing.T) {
-		opts := CommitAgentOptions{}
+		opts := CommitAgentOptions{
+			LLMProvider: mockProvider,
+			GitExecutor: mockExecutor,
+		}
 		err := opts.Validate()
 		assert.NoError(t, err)
 		assert.Equal(t, "en", opts.Language)
+	})
+
+	t.Run("missing LLM provider", func(t *testing.T) {
+		opts := CommitAgentOptions{
+			GitExecutor: mockExecutor,
+		}
+		err := opts.Validate()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "LLM provider is required")
+	})
+
+	t.Run("missing Git executor", func(t *testing.T) {
+		opts := CommitAgentOptions{
+			LLMProvider: mockProvider,
+		}
+		err := opts.Validate()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "Git executor is required")
 	})
 }
 
@@ -236,8 +287,20 @@ func (m *MockGitExecutor) Status(ctx context.Context) (string, error) {
 	return m.StatusResult, m.StatusErr
 }
 
-func (m *MockGitExecutor) Log(ctx context.Context, opts interface{}) (string, error) {
+func (m *MockGitExecutor) Log(ctx context.Context, opts git.LogOptions) (string, error) {
 	return m.LogResult, m.LogErr
+}
+
+func (m *MockGitExecutor) LogRange(ctx context.Context, base, head string) (string, error) {
+	return m.LogResult, m.LogErr
+}
+
+func (m *MockGitExecutor) Show(ctx context.Context, ref string) (string, error) {
+	return "", nil
+}
+
+func (m *MockGitExecutor) ListBranches(ctx context.Context) (string, error) {
+	return "", nil
 }
 
 func (m *MockGitExecutor) Commit(ctx context.Context, message string) error {
