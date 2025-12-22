@@ -1,0 +1,272 @@
+# GitBuddy-Go
+
+<p align="center">
+  <strong>🤖 AI 驱动的 Git 工作流助手</strong>
+</p>
+
+<p align="center">
+  <a href="#功能特性">功能特性</a> •
+  <a href="#安装">安装</a> •
+  <a href="#快速开始">快速开始</a> •
+  <a href="#配置">配置</a> •
+  <a href="#使用方法">使用方法</a> •
+  <a href="#支持的-llm">支持的 LLM</a>
+</p>
+
+<p align="center">
+  <a href="README.md">English</a> |
+  <a href="README_zh.md">简体中文</a> |
+  <a href="README_ja.md">日本語</a>
+</p>
+
+---
+
+GitBuddy-Go 是一个 AI 驱动的命令行工具，用于自动化和增强日常 Git 工作流程。它采用大语言模型（LLM）的 Agent 方式，智能分析代码变更，生成高质量的 commit 信息、PR 描述和开发报告。
+
+## 功能特性
+
+- **🎯 智能 Commit 信息**: 自动分析暂存区变更，生成符合 [Conventional Commits](https://www.conventionalcommits.org/) 规范的提交信息
+- **📝 PR 描述生成器**: 创建包含摘要、变更内容、动机和影响分析的完整 PR 描述
+- **📊 开发报告**: 根据提交历史生成结构化的周报/月报
+- **🌍 多语言支持**: 支持任意语言输出（中文、英文、日文等）
+- **🔧 多 LLM 支持**: 支持 OpenAI、DeepSeek、Ollama、Grok 和 Google Gemini
+- **📡 实时流式输出**: 实时查看 AI 的分析过程
+- **🤖 Agent 工作流**: LLM 自主调用 Git 工具收集上下文，再生成输出
+
+## 安装
+
+### 从源码构建
+
+```bash
+# 克隆仓库
+git clone https://github.com/huimingz/gitbuddy-go.git
+cd gitbuddy-go
+
+# 构建
+go build -o gitbuddy ./cmd/gitbuddy
+
+# 安装到 PATH（可选）
+sudo mv gitbuddy /usr/local/bin/
+```
+
+### 环境要求
+
+- Go 1.21 或更高版本
+- Git
+
+## 快速开始
+
+1. **初始化配置**:
+
+```bash
+gitbuddy init
+```
+
+这会在 `~/.gitbuddy.yaml` 创建配置文件。
+
+2. **配置 LLM 提供商**（编辑 `~/.gitbuddy.yaml`）:
+
+```yaml
+default_model: deepseek
+
+models:
+  deepseek:
+    provider: deepseek
+    api_key: your-api-key-here
+    model: deepseek-chat
+
+language: zh  # 默认使用中文
+```
+
+3. **生成 commit 信息**:
+
+```bash
+# 先暂存变更
+git add .
+
+# 生成并提交
+gitbuddy commit
+```
+
+## 配置
+
+GitBuddy 使用 YAML 配置文件，默认位置为 `~/.gitbuddy.yaml`。
+
+### 配置文件示例
+
+```yaml
+# 默认使用的模型
+default_model: deepseek
+
+# 可用模型配置
+models:
+  deepseek:
+    provider: deepseek
+    api_key: sk-your-api-key
+    model: deepseek-chat
+    base_url: https://api.deepseek.com/v1  # 可选
+
+  openai:
+    provider: openai
+    api_key: sk-your-openai-key
+    model: gpt-4o
+
+  ollama:
+    provider: ollama
+    model: qwen2.5:14b
+    base_url: http://localhost:11434/v1
+
+  gemini:
+    provider: gemini
+    api_key: your-gemini-api-key
+    model: gemini-2.0-flash
+
+# 默认输出语言
+language: zh
+```
+
+### 配置优先级
+
+1. 命令行参数（最高优先级）
+2. 配置文件
+3. 环境变量
+4. 默认值
+
+## 使用方法
+
+### 生成 Commit 信息
+
+```bash
+# 基本用法 - 分析暂存区变更并生成 commit 信息
+gitbuddy commit
+
+# 指定输出语言
+gitbuddy commit -l zh
+
+# 提供额外上下文
+gitbuddy commit -c "修复了 issue #123 中报告的登录问题"
+
+# 使用指定模型
+gitbuddy commit -m openai
+
+# 自动确认，无需提示
+gitbuddy commit -y
+```
+
+### 生成 PR 描述
+
+```bash
+# 与 main 分支比较
+gitbuddy pr --base main
+
+# 指定语言和上下文
+gitbuddy pr --base develop -l zh -c "API 接口性能优化"
+
+# 使用指定模型
+gitbuddy pr --base main -m gemini
+```
+
+### 生成开发报告
+
+```bash
+# 生成指定日期范围的报告
+gitbuddy report --since 2024-12-01 --until 2024-12-31
+
+# 按作者筛选
+gitbuddy report --since 2024-12-01 --author "john@example.com"
+
+# 指定语言
+gitbuddy report --since 2024-12-01 -l zh
+```
+
+### 其他命令
+
+```bash
+# 显示版本信息
+gitbuddy version
+
+# 列出已配置的模型
+gitbuddy models list
+
+# 初始化配置文件
+gitbuddy init
+```
+
+### 全局参数
+
+| 参数 | 说明 |
+|------|------|
+| `--config` | 配置文件路径（默认：`~/.gitbuddy.yaml`） |
+| `--debug` | 启用调试模式，输出详细日志 |
+| `-m, --model` | 指定使用的 LLM 模型 |
+
+## 支持的 LLM
+
+| 提供商 | 模型 | 说明 |
+|--------|------|------|
+| **DeepSeek** | deepseek-chat, deepseek-reasoner | 推荐，性价比最高 |
+| **OpenAI** | gpt-4o, gpt-4o-mini, gpt-3.5-turbo | 需要 OpenAI API 密钥 |
+| **Ollama** | 任意本地模型 | 本地运行，无需 API 密钥 |
+| **Grok** | grok-beta | 需要 xAI API 密钥 |
+| **Gemini** | gemini-2.0-flash, gemini-1.5-pro | 需要 Google AI API 密钥 |
+
+## 工作原理
+
+GitBuddy 采用 **Agent 方式**，LLM 自主决定执行哪些 Git 命令：
+
+1. **生成 Commit 信息时**:
+   - LLM 调用 `git status` 获取概览
+   - LLM 调用 `git diff --cached` 分析变更
+   - 可选调用 `git log` 获取上下文
+   - 通过 `submit_commit` 工具生成结构化的 commit 信息
+
+2. **生成 PR 描述时**:
+   - LLM 调用 `git log` 查看分支间的提交
+   - LLM 调用 `git diff` 分析代码变更
+   - 通过 `submit_pr` 工具生成 PR 描述
+
+3. **生成报告时**:
+   - LLM 调用 `git log` 并应用日期过滤
+   - 分析并分类提交
+   - 通过 `submit_report` 工具生成报告
+
+这种 Agent 方式让 LLM 能够准确获取所需的上下文，从而生成更准确、更相关的输出。
+
+## 调试模式
+
+启用调试模式查看详细信息：
+
+```bash
+gitbuddy commit --debug
+```
+
+调试模式会显示：
+- 配置详情
+- 使用的 LLM 提供商和模型
+- 工具调用及其结果
+- Token 使用统计
+- 执行时间
+
+## 代理支持
+
+GitBuddy 支持标准的代理环境变量：
+
+```bash
+export HTTP_PROXY=http://proxy.example.com:8080
+export HTTPS_PROXY=http://proxy.example.com:8080
+```
+
+## 贡献
+
+欢迎贡献代码！请随时提交 Pull Request。
+
+## 许可证
+
+MIT License - 详见 [LICENSE](LICENSE)。
+
+## 致谢
+
+- [CloudWeGo Eino](https://github.com/cloudwego/eino) - AI Agent 框架
+- [Cobra](https://github.com/spf13/cobra) - CLI 框架
+- [Viper](https://github.com/spf13/viper) - 配置管理
+
