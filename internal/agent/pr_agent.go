@@ -10,6 +10,7 @@ import (
 	"text/template"
 
 	"github.com/cloudwego/eino/schema"
+	"github.com/huimingz/gitbuddy-go/internal/agent/tools"
 	"github.com/huimingz/gitbuddy-go/internal/git"
 	"github.com/huimingz/gitbuddy-go/internal/llm"
 	"github.com/huimingz/gitbuddy-go/internal/log"
@@ -38,14 +39,12 @@ type PRInfo struct {
 func (p *PRInfo) FormatDescription() string {
 	var sb strings.Builder
 
-	// Summary section
 	if p.Summary != "" {
 		sb.WriteString("## Summary\n\n")
 		sb.WriteString(p.Summary)
 		sb.WriteString("\n\n")
 	}
 
-	// Changes section
 	if len(p.Changes) > 0 {
 		sb.WriteString("## Changes\n\n")
 		for _, change := range p.Changes {
@@ -56,21 +55,18 @@ func (p *PRInfo) FormatDescription() string {
 		sb.WriteString("\n")
 	}
 
-	// Why section
 	if p.Why != "" {
 		sb.WriteString("## Why\n\n")
 		sb.WriteString(p.Why)
 		sb.WriteString("\n\n")
 	}
 
-	// Impact section
 	if p.Impact != "" {
 		sb.WriteString("## Impact\n\n")
 		sb.WriteString(p.Impact)
 		sb.WriteString("\n\n")
 	}
 
-	// Testing notes section
 	if p.TestingNote != "" {
 		sb.WriteString("## Testing\n\n")
 		sb.WriteString(p.TestingNote)
@@ -82,12 +78,12 @@ func (p *PRInfo) FormatDescription() string {
 
 // PRResponse contains the result of PR description generation
 type PRResponse struct {
-	PRInfo           *PRInfo // Structured PR information
-	Title            string  // PR title
-	Description      string  // Complete formatted description
-	PromptTokens     int     // Number of tokens in the prompt
-	CompletionTokens int     // Number of tokens in the completion
-	TotalTokens      int     // Total tokens used
+	PRInfo           *PRInfo
+	Title            string
+	Description      string
+	PromptTokens     int
+	CompletionTokens int
+	TotalTokens      int
 }
 
 // GetTitle returns the PR title (implements ui.PRDescriptionDisplayer)
@@ -102,12 +98,12 @@ func (r *PRResponse) GetDescription() string {
 
 // PRAgentOptions contains configuration for PRAgent
 type PRAgentOptions struct {
-	Language    string            // Output language (default: "en")
-	GitExecutor git.Executor      // Git executor for running git commands
-	LLMProvider llm.Provider      // LLM provider for generating messages
-	Printer     *ui.StreamPrinter // Stream printer for output (optional)
-	Output      io.Writer         // Output writer (used if Printer is nil)
-	Debug       bool              // Enable debug mode
+	Language    string
+	GitExecutor git.Executor
+	LLMProvider llm.Provider
+	Printer     *ui.StreamPrinter
+	Output      io.Writer
+	Debug       bool
 }
 
 // PRAgent generates PR descriptions using LLM
@@ -146,7 +142,7 @@ func (p *SubmitPRParams) ToPRInfo() *PRInfo {
 }
 
 // BuildPRSystemPrompt builds the system prompt for PR generation
-func BuildPRSystemPrompt(language, context string) string {
+func BuildPRSystemPrompt(language, context, baseBranch, headBranch string) string {
 	tmpl, err := template.New("pr_prompt").Parse(PRSystemPrompt)
 	if err != nil {
 		return PRSystemPrompt
@@ -154,8 +150,10 @@ func BuildPRSystemPrompt(language, context string) string {
 
 	var buf bytes.Buffer
 	data := map[string]string{
-		"Language": language,
-		"Context":  context,
+		"Language":   language,
+		"Context":    context,
+		"BaseBranch": baseBranch,
+		"HeadBranch": headBranch,
 	}
 	if err := tmpl.Execute(&buf, data); err != nil {
 		return PRSystemPrompt
@@ -163,23 +161,16 @@ func BuildPRSystemPrompt(language, context string) string {
 	return buf.String()
 }
 
-// GeneratePRDescription generates a PR description based on branch diff
+// GeneratePRDescription generates a PR description using agent loop
 func (a *PRAgent) GeneratePRDescription(ctx context.Context, req PRRequest) (*PRResponse, error) {
 	printer := a.opts.Printer
 
-	// Helper functions for printing
+	// Helper functions
 	printProgress := func(msg string) {
 		if printer != nil {
 			_ = printer.PrintProgress(msg)
 		}
 		log.Debug(msg)
-	}
-
-	printStep := func(step int, msg string) {
-		if printer != nil {
-			_ = printer.PrintStep(step, msg)
-		}
-		log.Debug("Step %d: %s", step, msg)
 	}
 
 	printToolCall := func(name string) {
@@ -189,15 +180,21 @@ func (a *PRAgent) GeneratePRDescription(ctx context.Context, req PRRequest) (*PR
 		log.Debug("Tool call: %s", name)
 	}
 
-	printSuccess := func(msg string) {
+	printToolResult := func(name string, resultLen int) {
 		if printer != nil {
-			_ = printer.PrintSuccess(msg)
+			_ = printer.PrintSuccess(fmt.Sprintf("%s returned %d bytes", name, resultLen))
 		}
 	}
 
 	printInfo := func(msg string) {
 		if printer != nil {
 			_ = printer.PrintInfo(msg)
+		}
+	}
+
+	printSuccess := func(msg string) {
+		if printer != nil {
+			_ = printer.PrintSuccess(msg)
 		}
 	}
 
@@ -209,7 +206,6 @@ func (a *PRAgent) GeneratePRDescription(ctx context.Context, req PRRequest) (*PR
 	providerName := a.opts.LLMProvider.Name()
 	modelName := a.opts.LLMProvider.GetConfig().Model
 	printProgress(fmt.Sprintf("Initializing LLM provider (%s/%s)...", providerName, modelName))
-	log.Debug("Using LLM: provider=%s, model=%s", providerName, modelName)
 
 	chatModel, err := a.opts.LLMProvider.CreateChatModel(ctx)
 	if err != nil {
@@ -219,222 +215,183 @@ func (a *PRAgent) GeneratePRDescription(ctx context.Context, req PRRequest) (*PR
 		return nil, fmt.Errorf("chat model is nil (provider: %s)", providerName)
 	}
 
-	// Step 1: Get current branch info
-	printStep(1, fmt.Sprintf("Comparing %s with %s...", req.HeadBranch, req.BaseBranch))
+	// Create git tools
+	gitDiffBranchesTool := tools.NewGitDiffBranchesTool(a.opts.GitExecutor)
+	gitLogRangeTool := tools.NewGitLogRangeTool(a.opts.GitExecutor)
+	gitStatusTool := tools.NewGitStatusTool(a.opts.GitExecutor)
 
-	// Step 2: Get commit log between branches
-	var commitLog string
-	if a.opts.GitExecutor != nil {
-		printToolCall("git_log")
-		commitLog, err = a.opts.GitExecutor.LogRange(ctx, req.BaseBranch, req.HeadBranch)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get commit log: %w", err)
-		}
-		printSuccess(fmt.Sprintf("Found commits: %d", len(strings.Split(commitLog, "\n"))))
+	// Define tool schemas
+	toolInfos := []*schema.ToolInfo{
+		{
+			Name: "git_diff_branches",
+			Desc: gitDiffBranchesTool.Description(),
+			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+				"base": {Type: schema.String, Desc: "Base branch to compare from", Required: true},
+				"head": {Type: schema.String, Desc: "Head branch to compare to (defaults to HEAD)", Required: false},
+			}),
+		},
+		{
+			Name: "git_log_range",
+			Desc: gitLogRangeTool.Description(),
+			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+				"base": {Type: schema.String, Desc: "Base branch to compare from", Required: true},
+				"head": {Type: schema.String, Desc: "Head branch to compare to (defaults to HEAD)", Required: false},
+			}),
+		},
+		{
+			Name:        "git_status",
+			Desc:        gitStatusTool.Description(),
+			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{}),
+		},
+		{
+			Name: "submit_pr",
+			Desc: "Submit the structured PR information. Call this when you have analyzed the changes and are ready to generate the PR description.",
+			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+				"title":        {Type: schema.String, Desc: "PR title (max 72 chars)", Required: true},
+				"summary":      {Type: schema.String, Desc: "Brief summary of changes", Required: true},
+				"changes":      {Type: schema.Array, ElemInfo: &schema.ParameterInfo{Type: schema.String}, Desc: "List of main changes", Required: true},
+				"why":          {Type: schema.String, Desc: "Why these changes were needed", Required: true},
+				"impact":       {Type: schema.String, Desc: "Potential impact (optional)", Required: false},
+				"testing_note": {Type: schema.String, Desc: "Testing notes (optional)", Required: false},
+			}),
+		},
 	}
 
-	// Step 3: Get diff between branches
-	var diff string
-	if a.opts.GitExecutor != nil {
-		printStep(2, "Getting diff between branches...")
-		printToolCall("git_diff")
-		diff, err = a.opts.GitExecutor.DiffBranches(ctx, req.BaseBranch, req.HeadBranch)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get branch diff: %w", err)
-		}
-		if diff == "" {
-			return nil, fmt.Errorf("no differences found between %s and %s", req.BaseBranch, req.HeadBranch)
-		}
-		printSuccess(fmt.Sprintf("Diff retrieved (%d bytes)", len(diff)))
-	}
-
-	// Build system prompt
-	printStep(3, "Analyzing changes and generating PR description...")
-	systemPrompt := BuildPRSystemPrompt(req.Language, req.Context)
-	printInfo(fmt.Sprintf("Language: %s", req.Language))
-	log.Debug("System prompt built")
-
-	// Build user message with branch info, commits, and diff
-	var userMessage strings.Builder
-	userMessage.WriteString(fmt.Sprintf("## Branch Information\n"))
-	userMessage.WriteString(fmt.Sprintf("- Source branch: %s\n", req.HeadBranch))
-	userMessage.WriteString(fmt.Sprintf("- Target branch: %s\n\n", req.BaseBranch))
-
-	userMessage.WriteString("## Commits in this PR\n")
-	userMessage.WriteString("```\n")
-	userMessage.WriteString(commitLog)
-	userMessage.WriteString("\n```\n\n")
-
-	userMessage.WriteString("## Code Changes (Diff)\n")
-	userMessage.WriteString("```diff\n")
-	userMessage.WriteString(diff)
-	userMessage.WriteString("\n```\n")
-
-	// Define the submit_pr tool for structured output
-	submitPRTool := &schema.ToolInfo{
-		Name: "submit_pr",
-		Desc: "Submit the structured PR information. Use this to output the PR title and description in a structured format.",
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"title": {
-				Type:     schema.String,
-				Desc:     "PR title - concise summary of the changes (max 72 chars)",
-				Required: true,
-			},
-			"summary": {
-				Type:     schema.String,
-				Desc:     "Brief summary explaining what this PR does",
-				Required: true,
-			},
-			"changes": {
-				Type:     schema.Array,
-				ElemInfo: &schema.ParameterInfo{Type: schema.String},
-				Desc:     "List of main changes made in this PR",
-				Required: true,
-			},
-			"why": {
-				Type:     schema.String,
-				Desc:     "Explanation of why these changes were needed",
-				Required: true,
-			},
-			"impact": {
-				Type:     schema.String,
-				Desc:     "Potential impact of these changes (optional)",
-				Required: false,
-			},
-			"testing_note": {
-				Type:     schema.String,
-				Desc:     "Notes about testing (optional)",
-				Required: false,
-			},
-		}),
-	}
-
-	// Bind tool to chat model
-	if err := chatModel.BindTools([]*schema.ToolInfo{submitPRTool}); err != nil {
+	// Bind tools to chat model
+	if err := chatModel.BindTools(toolInfos); err != nil {
 		return nil, fmt.Errorf("failed to bind tools: %w", err)
 	}
 
-	// Create messages
+	// Build system prompt
+	systemPrompt := BuildPRSystemPrompt(req.Language, req.Context, req.BaseBranch, req.HeadBranch)
+	printInfo(fmt.Sprintf("Generating PR: %s → %s", req.HeadBranch, req.BaseBranch))
+
+	// Initial messages
 	messages := []*schema.Message{
-		{
-			Role:    schema.System,
-			Content: systemPrompt,
-		},
-		{
-			Role:    schema.User,
-			Content: userMessage.String(),
-		},
+		{Role: schema.System, Content: systemPrompt},
+		{Role: schema.User, Content: fmt.Sprintf("Please generate a PR description for merging branch '%s' into '%s'. Use the available tools to analyze the changes.", req.HeadBranch, req.BaseBranch)},
 	}
 
-	printProgress("Sending request to LLM (streaming)...")
-	log.Debug("Sending request to LLM with streaming")
-
-	// Use streaming API for real-time output
-	streamReader, err := chatModel.Stream(ctx, messages)
-	if err != nil {
-		return nil, fmt.Errorf("LLM stream failed: %w", err)
-	}
-	defer streamReader.Close()
-
-	// Collect the full response while streaming
-	var fullContent strings.Builder
-	var toolCalls []*schema.ToolCall
-	var streamStarted bool
 	var promptTokens, completionTokens, totalTokens int
+	maxIterations := 10
 
-	printInfo("LLM Response:")
-	if printer != nil {
-		_ = printer.Newline()
-	}
+	// Agent loop
+	for i := 0; i < maxIterations; i++ {
+		printProgress(fmt.Sprintf("Agent iteration %d...", i+1))
 
-	// Read from stream and output in real-time
-	for {
-		chunk, err := streamReader.Recv()
+		// Stream LLM response
+		streamReader, err := chatModel.Stream(ctx, messages)
 		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			return nil, fmt.Errorf("stream read error: %w", err)
+			return nil, fmt.Errorf("LLM stream failed: %w", err)
 		}
 
-		// Stream content token by token
-		if chunk.Content != "" {
-			if !streamStarted {
-				streamStarted = true
-			}
-			fullContent.WriteString(chunk.Content)
+		var fullContent strings.Builder
+		var toolCalls []*schema.ToolCall
+		var toolArgStarted bool
 
-			// Print each token in real-time
-			if printer != nil {
-				_ = printer.PrintLLMContent(chunk.Content)
-			}
+		printInfo("LLM Response:")
+		if printer != nil {
+			_ = printer.Newline()
 		}
 
-		// Collect tool calls from chunks
-		if len(chunk.ToolCalls) > 0 {
-			for _, tc := range chunk.ToolCalls {
-				idx := 0
-				if tc.Index != nil {
-					idx = *tc.Index
+		// Read stream
+		for {
+			chunk, err := streamReader.Recv()
+			if err != nil {
+				if err == io.EOF {
+					break
 				}
+				streamReader.Close()
+				return nil, fmt.Errorf("stream read error: %w", err)
+			}
 
-				for len(toolCalls) <= idx {
-					toolCalls = append(toolCalls, &schema.ToolCall{
-						Function: schema.FunctionCall{},
-					})
+			if chunk.Content != "" {
+				fullContent.WriteString(chunk.Content)
+				if printer != nil {
+					_ = printer.PrintLLMContent(chunk.Content)
 				}
+			}
 
-				if tc.Function.Name != "" {
-					if toolCalls[idx].Function.Name == "" {
-						printToolCall(fmt.Sprintf("%s (from LLM)", tc.Function.Name))
-						// Start argument display
-						if printer != nil {
-							_ = printer.PrintToolArgStart()
+			// Collect tool calls
+			if len(chunk.ToolCalls) > 0 {
+				for _, tc := range chunk.ToolCalls {
+					idx := 0
+					if tc.Index != nil {
+						idx = *tc.Index
+					}
+
+					for len(toolCalls) <= idx {
+						toolCalls = append(toolCalls, &schema.ToolCall{Function: schema.FunctionCall{}})
+					}
+
+					// Collect tool call ID
+					if tc.ID != "" {
+						toolCalls[idx].ID = tc.ID
+					}
+
+					if tc.Function.Name != "" {
+						if toolCalls[idx].Function.Name == "" {
+							printToolCall(tc.Function.Name)
+							if printer != nil {
+								_ = printer.PrintToolArgStart()
+							}
+							toolArgStarted = true
+						}
+						toolCalls[idx].Function.Name = tc.Function.Name
+					}
+					if tc.Function.Arguments != "" {
+						toolCalls[idx].Function.Arguments += tc.Function.Arguments
+						if printer != nil && toolArgStarted {
+							_ = printer.PrintToolArgChunk(tc.Function.Arguments)
 						}
 					}
-					toolCalls[idx].Function.Name = tc.Function.Name
-				}
-				if tc.Function.Arguments != "" {
-					toolCalls[idx].Function.Arguments += tc.Function.Arguments
-					// Stream the argument chunk in real-time
-					if printer != nil {
-						_ = printer.PrintToolArgChunk(tc.Function.Arguments)
-					}
 				}
 			}
-		}
 
-		// Collect token usage from ResponseMeta
-		if chunk.ResponseMeta != nil && chunk.ResponseMeta.Usage != nil {
-			usage := chunk.ResponseMeta.Usage
-			if usage.PromptTokens > promptTokens {
-				promptTokens = usage.PromptTokens
-			}
-			if usage.CompletionTokens > completionTokens {
-				completionTokens = usage.CompletionTokens
-			}
-			if usage.TotalTokens > totalTokens {
-				totalTokens = usage.TotalTokens
+			// Collect token usage
+			if chunk.ResponseMeta != nil && chunk.ResponseMeta.Usage != nil {
+				usage := chunk.ResponseMeta.Usage
+				promptTokens += usage.PromptTokens
+				completionTokens += usage.CompletionTokens
+				totalTokens += usage.TotalTokens
 			}
 		}
-	}
+		streamReader.Close()
 
-	if printer != nil {
-		_ = printer.Newline()
-	}
+		if printer != nil {
+			_ = printer.Newline()
+		}
 
-	// Check for tool calls in the response
-	if len(toolCalls) > 0 {
-		for _, toolCall := range toolCalls {
-			if toolCall.Function.Name == "" {
+		// Add assistant message to history
+		// Convert []*schema.ToolCall to []schema.ToolCall
+		var toolCallsValue []schema.ToolCall
+		for _, tc := range toolCalls {
+			if tc != nil {
+				toolCallsValue = append(toolCallsValue, *tc)
+			}
+		}
+		assistantMsg := &schema.Message{
+			Role:      schema.Assistant,
+			Content:   fullContent.String(),
+			ToolCalls: toolCallsValue,
+		}
+		messages = append(messages, assistantMsg)
+
+		// Process tool calls
+		if len(toolCalls) == 0 {
+			return nil, fmt.Errorf("LLM did not call any tools")
+		}
+
+		for _, tc := range toolCalls {
+			if tc.Function.Name == "" {
 				continue
 			}
-			log.Debug("Tool call: %s with args: %s", toolCall.Function.Name, toolCall.Function.Arguments)
 
-			if toolCall.Function.Name == "submit_pr" {
+			// Check if it's the final submit_pr call
+			if tc.Function.Name == "submit_pr" {
 				var params SubmitPRParams
-				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &params); err != nil {
-					log.Debug("Failed to parse tool call arguments: %v", err)
+				if err := json.Unmarshal([]byte(tc.Function.Arguments), &params); err != nil {
+					log.Debug("Failed to parse submit_pr arguments: %v", err)
 					continue
 				}
 
@@ -450,8 +407,53 @@ func (a *PRAgent) GeneratePRDescription(ctx context.Context, req PRRequest) (*PR
 					TotalTokens:      totalTokens,
 				}, nil
 			}
+
+			// Execute other tools
+			var result string
+			var toolErr error
+
+			switch tc.Function.Name {
+			case "git_diff_branches":
+				var params tools.GitDiffBranchesParams
+				if err := json.Unmarshal([]byte(tc.Function.Arguments), &params); err != nil {
+					toolErr = fmt.Errorf("invalid parameters: %w", err)
+				} else {
+					result, toolErr = gitDiffBranchesTool.Execute(ctx, &params)
+				}
+
+			case "git_log_range":
+				var params tools.GitLogRangeParams
+				if err := json.Unmarshal([]byte(tc.Function.Arguments), &params); err != nil {
+					toolErr = fmt.Errorf("invalid parameters: %w", err)
+				} else {
+					result, toolErr = gitLogRangeTool.Execute(ctx, &params)
+				}
+
+			case "git_status":
+				result, toolErr = gitStatusTool.Execute(ctx, nil)
+
+			default:
+				toolErr = fmt.Errorf("unknown tool: %s", tc.Function.Name)
+			}
+
+			// Build tool result message
+			var toolResult string
+			if toolErr != nil {
+				toolResult = fmt.Sprintf("Error: %v", toolErr)
+				log.Debug("Tool %s error: %v", tc.Function.Name, toolErr)
+			} else {
+				toolResult = result
+				printToolResult(tc.Function.Name, len(result))
+			}
+
+			// Add tool result to messages
+			messages = append(messages, &schema.Message{
+				Role:       schema.Tool,
+				Content:    toolResult,
+				ToolCallID: tc.ID,
+			})
 		}
 	}
 
-	return nil, fmt.Errorf("failed to generate PR description: no valid response from LLM")
+	return nil, fmt.Errorf("agent loop exceeded maximum iterations")
 }
