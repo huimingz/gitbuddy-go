@@ -32,6 +32,9 @@ type Executor interface {
 	// Log returns the commit log
 	Log(ctx context.Context, opts LogOptions) (string, error)
 
+	// LogRange returns the commit log between two refs (base..head)
+	LogRange(ctx context.Context, base, head string) (string, error)
+
 	// Show returns detailed information about a commit
 	Show(ctx context.Context, ref string) (string, error)
 
@@ -154,4 +157,9 @@ func (e *DefaultExecutor) CurrentBranch(ctx context.Context) (string, error) {
 // CurrentUser returns the current git user name
 func (e *DefaultExecutor) CurrentUser(ctx context.Context) (string, error) {
 	return e.runGit(ctx, "config", "user.name")
+}
+
+// LogRange returns the commit log between two refs (base..head)
+func (e *DefaultExecutor) LogRange(ctx context.Context, base, head string) (string, error) {
+	return e.runGit(ctx, "log", fmt.Sprintf("%s..%s", base, head), "--pretty=format:%h %s")
 }

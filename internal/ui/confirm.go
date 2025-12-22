@@ -81,3 +81,51 @@ func ShowCommitMessage(message string, output io.Writer) error {
 	_, err = cyan.Fprintln(output, "─────────────────────────────")
 	return err
 }
+
+// PRDescriptionDisplayer is an interface for PR responses that can be displayed
+type PRDescriptionDisplayer interface {
+	GetTitle() string
+	GetDescription() string
+}
+
+// ShowPRDescription displays a formatted PR description
+func ShowPRDescription(pr PRDescriptionDisplayer, output io.Writer) error {
+	bold := color.New(color.Bold)
+	cyan := color.New(color.FgCyan)
+	green := color.New(color.FgGreen)
+
+	// Title section
+	_, err := bold.Fprintln(output, "\n📋 Generated PR:")
+	if err != nil {
+		return err
+	}
+
+	_, err = cyan.Fprintln(output, "═══════════════════════════════════════════════════════════════════════════════")
+	if err != nil {
+		return err
+	}
+
+	// PR Title
+	_, err = green.Fprintf(output, "Title: ")
+	if err != nil {
+		return err
+	}
+	_, err = bold.Fprintln(output, pr.GetTitle())
+	if err != nil {
+		return err
+	}
+
+	_, err = cyan.Fprintln(output, "───────────────────────────────────────────────────────────────────────────────")
+	if err != nil {
+		return err
+	}
+
+	// PR Description
+	_, err = fmt.Fprintln(output, pr.GetDescription())
+	if err != nil {
+		return err
+	}
+
+	_, err = cyan.Fprintln(output, "═══════════════════════════════════════════════════════════════════════════════")
+	return err
+}
