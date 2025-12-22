@@ -35,18 +35,20 @@ GitBuddy-Go is an AI-powered command-line tool that automates and enhances your 
 
 ## Installation
 
+### Using Go Install (Recommended)
+
+```bash
+go install github.com/huimingz/gitbuddy-go/cmd/gitbuddy@latest
+```
+
+This will install `gitbuddy` to your `$GOPATH/bin` directory. Make sure it's in your `PATH`.
+
 ### From Source
 
 ```bash
-# Clone the repository
 git clone https://github.com/huimingz/gitbuddy-go.git
 cd gitbuddy-go
-
-# Build
 go build -o gitbuddy ./cmd/gitbuddy
-
-# Install to PATH (optional)
-sudo mv gitbuddy /usr/local/bin/
 ```
 
 ### Requirements

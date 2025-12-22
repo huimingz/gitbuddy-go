@@ -35,18 +35,20 @@ GitBuddy-Goは、日常のGitワークフローを自動化・強化するAI駆�
 
 ## インストール
 
+### Go Installを使用（推奨）
+
+```bash
+go install github.com/huimingz/gitbuddy-go/cmd/gitbuddy@latest
+```
+
+これにより`gitbuddy`が`$GOPATH/bin`ディレクトリにインストールされます。このディレクトリが`PATH`に含まれていることを確認してください。
+
 ### ソースからビルド
 
 ```bash
-# リポジトリをクローン
 git clone https://github.com/huimingz/gitbuddy-go.git
 cd gitbuddy-go
-
-# ビルド
 go build -o gitbuddy ./cmd/gitbuddy
-
-# PATHにインストール（オプション）
-sudo mv gitbuddy /usr/local/bin/
 ```
 
 ### 動作要件
