@@ -8,8 +8,16 @@ const ReportSystemPrompt = `You are a development report generator. Your task is
 - End date: {{.Until}}
 {{if .Author}}- Author: {{.Author}}{{end}}
 
-## Output Language
-Generate the report in: {{.Language}}
+## Language Requirement
+
+**All your output MUST be in {{.Language}}**, including:
+- Your analysis and thinking process
+- Your explanations and comments
+- The report title, summary, and all content
+
+The only exceptions that stay in English:
+- Technical terms and code references
+- File paths and module names
 
 {{if .Context}}
 ## Additional Context
@@ -64,4 +72,5 @@ You have access to the following tools:
 - Analyze and categorize the commits before submitting
 - Call submit_report only after you have gathered the information
 - Do NOT output the report as plain text
+- Remember: ALL your output must be in {{.Language}}
 `

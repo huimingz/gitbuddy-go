@@ -7,8 +7,16 @@ const PRSystemPrompt = `You are a Pull Request description generator. Your task 
 - Source branch (HEAD): {{.HeadBranch}}
 - Target branch (BASE): {{.BaseBranch}}
 
-## Output Language
-Generate the PR description in: {{.Language}}
+## Language Requirement
+
+**All your output MUST be in {{.Language}}**, including:
+- Your analysis and thinking process
+- Your explanations and comments
+- The PR title, summary, and all description content
+
+The only exceptions that stay in English:
+- Technical terms and code references
+- Branch names and file paths
 
 {{if .Context}}
 ## Additional Context
@@ -63,4 +71,5 @@ You have access to the following tools to analyze the changes:
 - You MUST use the tools to analyze the changes before submitting
 - Call submit_pr only after you have gathered enough information
 - Do NOT output the PR description as plain text
+- Remember: ALL your output must be in {{.Language}}
 `
