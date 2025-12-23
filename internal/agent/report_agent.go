@@ -10,6 +10,7 @@ import (
 	"text/template"
 
 	"github.com/cloudwego/eino/schema"
+
 	"github.com/huimingz/gitbuddy-go/internal/agent/tools"
 	"github.com/huimingz/gitbuddy-go/internal/git"
 	"github.com/huimingz/gitbuddy-go/internal/llm"
@@ -243,26 +244,6 @@ func (a *ReportAgent) GenerateReport(ctx context.Context, req ReportRequest) (*R
 	// estimateTokenCount estimates token count from text
 	// This is a simple heuristic: ~4 chars per token for English, ~1.5 chars per token for Chinese
 	// For mixed content, we use a weighted average
-	estimateTokenCount := func(text string) int {
-		if len(text) == 0 {
-			return 0
-		}
-		// Count Chinese characters (CJK unified ideographs)
-		chineseChars := 0
-		for _, r := range text {
-			if r >= 0x4E00 && r <= 0x9FFF {
-				chineseChars++
-			}
-		}
-		// Estimate: Chinese ~1.5 chars/token, others ~4 chars/token
-		otherChars := len([]rune(text)) - chineseChars
-		tokens := (chineseChars * 2 / 3) + (otherChars / 4)
-		if tokens == 0 && len(text) > 0 {
-			tokens = 1 // At least 1 token for non-empty text
-		}
-		return tokens
-	}
-
 	printToolResult := func(name string, result string) {
 		if printer != nil {
 			bytes := len(result)

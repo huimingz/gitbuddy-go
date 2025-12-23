@@ -5,11 +5,12 @@ import (
 	"testing"
 
 	"github.com/cloudwego/eino/components/model"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/huimingz/gitbuddy-go/internal/agent/tools"
 	"github.com/huimingz/gitbuddy-go/internal/config"
 	"github.com/huimingz/gitbuddy-go/internal/git"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // MockLLMProvider is a mock implementation of llm.Provider for testing
