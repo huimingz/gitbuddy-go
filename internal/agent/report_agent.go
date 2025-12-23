@@ -240,9 +240,34 @@ func (a *ReportAgent) GenerateReport(ctx context.Context, req ReportRequest) (*R
 		log.Debug("Tool call: %s", name)
 	}
 
-	printToolResult := func(name string, resultLen int) {
+	// estimateTokenCount estimates token count from text
+	// This is a simple heuristic: ~4 chars per token for English, ~1.5 chars per token for Chinese
+	// For mixed content, we use a weighted average
+	estimateTokenCount := func(text string) int {
+		if len(text) == 0 {
+			return 0
+		}
+		// Count Chinese characters (CJK unified ideographs)
+		chineseChars := 0
+		for _, r := range text {
+			if r >= 0x4E00 && r <= 0x9FFF {
+				chineseChars++
+			}
+		}
+		// Estimate: Chinese ~1.5 chars/token, others ~4 chars/token
+		otherChars := len([]rune(text)) - chineseChars
+		tokens := (chineseChars * 2 / 3) + (otherChars / 4)
+		if tokens == 0 && len(text) > 0 {
+			tokens = 1 // At least 1 token for non-empty text
+		}
+		return tokens
+	}
+
+	printToolResult := func(name string, result string) {
 		if printer != nil {
-			_ = printer.PrintSuccess(fmt.Sprintf("%s returned %d bytes", name, resultLen))
+			bytes := len(result)
+			tokens := estimateTokenCount(result)
+			_ = printer.PrintSuccess(fmt.Sprintf("%s returned %d bytes (~%d tokens)", name, bytes, tokens))
 		}
 	}
 
@@ -504,7 +529,7 @@ func (a *ReportAgent) GenerateReport(ctx context.Context, req ReportRequest) (*R
 				log.Debug("Tool %s error: %v", tc.Function.Name, toolErr)
 			} else {
 				toolResult = result
-				printToolResult(tc.Function.Name, len(result))
+				printToolResult(tc.Function.Name, result)
 			}
 
 			// Add tool result to messages
