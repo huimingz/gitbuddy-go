@@ -84,7 +84,7 @@ func (e *DefaultExecutor) DiffCached(ctx context.Context) (string, error) {
 
 // DiffBranches returns the diff between two branches
 func (e *DefaultExecutor) DiffBranches(ctx context.Context, base, head string) (string, error) {
-	return e.runGit(ctx, "diff", fmt.Sprintf("%s..%s", base, head))
+	return e.runGit(ctx, "diff", fmt.Sprintf("%s...%s", base, head))
 }
 
 // Status returns the current git status
