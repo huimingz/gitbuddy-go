@@ -50,6 +50,24 @@ models:
   #   provider: grok
   #   api_key: ${XAI_API_KEY}
   #   model: grok-beta
+
+# PR description template (optional)
+# Provide a plain text template that the LLM will use as a format example
+# pr_template:
+#   # Option 1: Inline template
+#   template: |
+#     ## Summary
+#     Brief overview of the changes
+#     
+#     ## Changes
+#     - Change 1
+#     - Change 2
+#     
+#     ## Why
+#     Motivation for the changes
+#   
+#   # Option 2: Load from file
+#   # file: ~/.gitbuddy-pr-template.txt
 `
 
 var (

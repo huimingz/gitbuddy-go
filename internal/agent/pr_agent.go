@@ -26,55 +26,10 @@ type PRRequest struct {
 	Context    string // Additional context from user
 }
 
-// PRInfo contains structured PR information
+// PRInfo contains PR information
 type PRInfo struct {
-	Title       string   // PR title
-	Summary     string   // Brief summary of changes
-	Changes     []string // List of main changes
-	Why         string   // Why these changes were made
-	Impact      string   // Potential impact
-	TestingNote string   // Testing notes (optional)
-}
-
-// FormatDescription formats the PR description as markdown
-func (p *PRInfo) FormatDescription() string {
-	var sb strings.Builder
-
-	if p.Summary != "" {
-		sb.WriteString("## Summary\n\n")
-		sb.WriteString(p.Summary)
-		sb.WriteString("\n\n")
-	}
-
-	if len(p.Changes) > 0 {
-		sb.WriteString("## Changes\n\n")
-		for _, change := range p.Changes {
-			sb.WriteString("- ")
-			sb.WriteString(change)
-			sb.WriteString("\n")
-		}
-		sb.WriteString("\n")
-	}
-
-	if p.Why != "" {
-		sb.WriteString("## Why\n\n")
-		sb.WriteString(p.Why)
-		sb.WriteString("\n\n")
-	}
-
-	if p.Impact != "" {
-		sb.WriteString("## Impact\n\n")
-		sb.WriteString(p.Impact)
-		sb.WriteString("\n\n")
-	}
-
-	if p.TestingNote != "" {
-		sb.WriteString("## Testing\n\n")
-		sb.WriteString(p.TestingNote)
-		sb.WriteString("\n")
-	}
-
-	return strings.TrimSpace(sb.String())
+	Title       string // PR title
+	Description string // Full PR description
 }
 
 // PRResponse contains the result of PR description generation
@@ -100,6 +55,7 @@ func (r *PRResponse) GetDescription() string {
 // PRAgentOptions contains configuration for PRAgent
 type PRAgentOptions struct {
 	Language    string
+	Template    string // Custom PR template, if empty uses default
 	GitExecutor git.Executor
 	LLMProvider llm.Provider
 	Printer     *ui.StreamPrinter
@@ -120,30 +76,27 @@ func NewPRAgent(opts PRAgentOptions) *PRAgent {
 	return &PRAgent{opts: opts}
 }
 
-// SubmitPRParams represents the structured PR information from LLM
+// SubmitPRParams represents the PR information from LLM
 type SubmitPRParams struct {
-	Title       string   `json:"title"`
-	Summary     string   `json:"summary"`
-	Changes     []string `json:"changes"`
-	Why         string   `json:"why"`
-	Impact      string   `json:"impact,omitempty"`
-	TestingNote string   `json:"testing_note,omitempty"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
 }
 
 // ToPRInfo converts SubmitPRParams to PRInfo
 func (p *SubmitPRParams) ToPRInfo() *PRInfo {
 	return &PRInfo{
 		Title:       p.Title,
-		Summary:     p.Summary,
-		Changes:     p.Changes,
-		Why:         p.Why,
-		Impact:      p.Impact,
-		TestingNote: p.TestingNote,
+		Description: p.Description,
 	}
 }
 
 // BuildPRSystemPrompt builds the system prompt for PR generation
-func BuildPRSystemPrompt(language, context, baseBranch, headBranch string) string {
+func BuildPRSystemPrompt(language, context, baseBranch, headBranch, prTemplate string) string {
+	// Use default template if not provided
+	if prTemplate == "" {
+		prTemplate = DefaultPRTemplate
+	}
+
 	tmpl, err := template.New("pr_prompt").Parse(PRSystemPrompt)
 	if err != nil {
 		return PRSystemPrompt
@@ -155,6 +108,7 @@ func BuildPRSystemPrompt(language, context, baseBranch, headBranch string) strin
 		"Context":    context,
 		"BaseBranch": baseBranch,
 		"HeadBranch": headBranch,
+		"Template":   prTemplate,
 	}
 	if err := tmpl.Execute(&buf, data); err != nil {
 		return PRSystemPrompt
@@ -251,14 +205,10 @@ func (a *PRAgent) GeneratePRDescription(ctx context.Context, req PRRequest) (*PR
 		},
 		{
 			Name: "submit_pr",
-			Desc: "Submit the structured PR information. Call this when you have analyzed the changes and are ready to generate the PR description.",
+			Desc: "Submit the PR title and description. Call this when you have analyzed the changes and are ready to generate the PR description.",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-				"title":        {Type: schema.String, Desc: "PR title (max 72 chars)", Required: true},
-				"summary":      {Type: schema.String, Desc: "Brief summary of changes", Required: true},
-				"changes":      {Type: schema.Array, ElemInfo: &schema.ParameterInfo{Type: schema.String}, Desc: "List of main changes", Required: true},
-				"why":          {Type: schema.String, Desc: "Why these changes were needed", Required: true},
-				"impact":       {Type: schema.String, Desc: "Potential impact (optional)", Required: false},
-				"testing_note": {Type: schema.String, Desc: "Testing notes (optional)", Required: false},
+				"title":       {Type: schema.String, Desc: "PR title (max 72 chars)", Required: true},
+				"description": {Type: schema.String, Desc: "Full PR description following the template format", Required: true},
 			}),
 		},
 	}
@@ -269,7 +219,7 @@ func (a *PRAgent) GeneratePRDescription(ctx context.Context, req PRRequest) (*PR
 	}
 
 	// Build system prompt
-	systemPrompt := BuildPRSystemPrompt(req.Language, req.Context, req.BaseBranch, req.HeadBranch)
+	systemPrompt := BuildPRSystemPrompt(req.Language, req.Context, req.BaseBranch, req.HeadBranch, a.opts.Template)
 	printInfo(fmt.Sprintf("Generating PR: %s → %s", req.HeadBranch, req.BaseBranch))
 
 	// Initial messages
@@ -407,7 +357,7 @@ func (a *PRAgent) GeneratePRDescription(ctx context.Context, req PRRequest) (*PR
 				return &PRResponse{
 					PRInfo:           prInfo,
 					Title:            params.Title,
-					Description:      prInfo.FormatDescription(),
+					Description:      params.Description,
 					PromptTokens:     promptTokens,
 					CompletionTokens: completionTokens,
 					TotalTokens:      totalTokens,

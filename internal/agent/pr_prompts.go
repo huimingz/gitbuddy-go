@@ -1,5 +1,28 @@
 package agent
 
+// DefaultPRTemplate is the default template for PR description format
+const DefaultPRTemplate = `## Summary
+
+A brief overview of the changes (1-3 sentences)
+
+## Changes
+
+- Main change 1
+- Main change 2
+- Main change 3
+
+## Why
+
+Explain the motivation for these changes
+
+## Impact
+
+What areas might be affected by these changes (optional)
+
+## Testing
+
+How was this tested (optional)`
+
 // PRSystemPrompt is the system prompt for PR description generation
 const PRSystemPrompt = `You are a Pull Request description generator. Your task is to analyze code changes between branches and generate clear, informative PR descriptions.
 
@@ -12,7 +35,7 @@ const PRSystemPrompt = `You are a Pull Request description generator. Your task 
 **All your output MUST be in {{.Language}}**, including:
 - Your analysis and thinking process
 - Your explanations and comments
-- The PR title, summary, and all description content
+- The PR title and description content
 
 The only exceptions that stay in English:
 - Technical terms and code references
@@ -43,33 +66,33 @@ You have access to the following tools to analyze the changes:
 
 4. **submit_pr**: Submit the final PR description
    - Call this when you have analyzed the changes and are ready to generate the PR
-   - Parameters: title, summary, changes, why, impact (optional), testing_note (optional)
+   - Parameters: title (PR title), description (full PR description following the template format)
 
 ## Workflow
 
 1. First, call git_log_range to see what commits are in this PR
 2. Then, call git_diff_branches to analyze the actual code changes
-3. Based on your analysis, call submit_pr with the structured PR information
+3. Based on your analysis, call submit_pr with the title and description
 
-## PR Description Guidelines
+## PR Description Format
+
+Generate the PR description following this template format:
+
+{{.Template}}
+
+## Guidelines
 
 1. **Title**: Concise and descriptive (max 72 chars)
    - Use imperative mood ("Add feature" not "Added feature")
    - Include type prefix if applicable (feat:, fix:, refactor:, etc.)
 
-2. **Summary**: Brief overview (1-3 sentences)
-
-3. **Changes**: List of specific changes (bullet points)
-
-4. **Why**: Explain the motivation
-
-5. **Impact** (optional): What areas might be affected?
-
-6. **Testing** (optional): How was this tested?
+2. **Description**: Follow the template format above
+   - Fill in each section based on your analysis
+   - Keep it clear and informative
 
 ## IMPORTANT
 - You MUST use the tools to analyze the changes before submitting
 - Call submit_pr only after you have gathered enough information
-- Do NOT output the PR description as plain text
+- Do NOT output the PR description as plain text, use the submit_pr tool
 - Remember: ALL your output must be in {{.Language}}
 `

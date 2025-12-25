@@ -331,3 +331,105 @@ func TestSupportedProviders(t *testing.T) {
 	assert.Contains(t, providers, "gemini")
 	assert.Contains(t, providers, "grok")
 }
+
+func TestConfig_GetPRTemplate(t *testing.T) {
+	t.Run("returns empty when no template configured", func(t *testing.T) {
+		cfg := &Config{}
+		template, err := cfg.GetPRTemplate()
+		assert.NoError(t, err)
+		assert.Empty(t, template)
+	})
+
+	t.Run("returns empty when PRTemplate is nil", func(t *testing.T) {
+		cfg := &Config{PRTemplate: nil}
+		template, err := cfg.GetPRTemplate()
+		assert.NoError(t, err)
+		assert.Empty(t, template)
+	})
+
+	t.Run("returns inline template", func(t *testing.T) {
+		cfg := &Config{
+			PRTemplate: &PRTemplateConfig{
+				Template: "## Summary\n\nDescribe changes here",
+			},
+		}
+		template, err := cfg.GetPRTemplate()
+		assert.NoError(t, err)
+		assert.Equal(t, "## Summary\n\nDescribe changes here", template)
+	})
+
+	t.Run("inline template has priority over file", func(t *testing.T) {
+		cfg := &Config{
+			PRTemplate: &PRTemplateConfig{
+				Template: "inline template",
+				File:     "/some/file/path",
+			},
+		}
+		template, err := cfg.GetPRTemplate()
+		assert.NoError(t, err)
+		assert.Equal(t, "inline template", template)
+	})
+
+	t.Run("loads template from file", func(t *testing.T) {
+		// Create a temporary template file
+		tmpDir := t.TempDir()
+		templatePath := filepath.Join(tmpDir, "template.txt")
+		templateContent := "## PR Template\n\nFrom file"
+		err := os.WriteFile(templatePath, []byte(templateContent), 0644)
+		require.NoError(t, err)
+
+		cfg := &Config{
+			PRTemplate: &PRTemplateConfig{
+				File: templatePath,
+			},
+		}
+		template, err := cfg.GetPRTemplate()
+		assert.NoError(t, err)
+		assert.Equal(t, templateContent, template)
+	})
+
+	t.Run("returns error when file not found", func(t *testing.T) {
+		cfg := &Config{
+			PRTemplate: &PRTemplateConfig{
+				File: "/nonexistent/path/template.txt",
+			},
+		}
+		_, err := cfg.GetPRTemplate()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "not found")
+	})
+}
+
+func TestLoadFromFile_WithPRTemplate(t *testing.T) {
+	// Create a temporary config file with PR template
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, ".gitbuddy.yaml")
+
+	configContent := `
+default_model: deepseek
+models:
+  deepseek:
+    provider: deepseek
+    api_key: sk-test
+    model: deepseek-chat
+language: zh
+pr_template:
+  template: |
+    ## Summary
+    Brief overview
+    
+    ## Changes
+    - Change 1
+`
+	err := os.WriteFile(configPath, []byte(configContent), 0644)
+	require.NoError(t, err)
+
+	cfg, err := LoadFromFile(configPath)
+	require.NoError(t, err)
+
+	assert.NotNil(t, cfg.PRTemplate)
+	template, err := cfg.GetPRTemplate()
+	require.NoError(t, err)
+	assert.Contains(t, template, "## Summary")
+	assert.Contains(t, template, "## Changes")
+}

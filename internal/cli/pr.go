@@ -62,6 +62,15 @@ func runPR(cmd *cobra.Command, args []string) error {
 	language := cfg.GetLanguage(prLanguage)
 	log.Debug("Using language: %s", language)
 
+	// Get PR template
+	prTemplate, err := cfg.GetPRTemplate()
+	if err != nil {
+		return fmt.Errorf("failed to load PR template: %w", err)
+	}
+	if prTemplate != "" {
+		log.Debug("Using custom PR template")
+	}
+
 	// Create LLM provider
 	factory := llm.NewProviderFactory()
 	provider, err := factory.Create(*modelConfig)
@@ -92,6 +101,7 @@ func runPR(cmd *cobra.Command, args []string) error {
 	// Create PR agent
 	prAgent := agent.NewPRAgent(agent.PRAgentOptions{
 		Language:    language,
+		Template:    prTemplate,
 		GitExecutor: gitExecutor,
 		LLMProvider: provider,
 		Printer:     printer,

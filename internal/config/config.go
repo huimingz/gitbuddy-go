@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -31,6 +32,13 @@ type Config struct {
 	DefaultModel string                 `yaml:"default_model" mapstructure:"default_model"`
 	Models       map[string]ModelConfig `yaml:"models" mapstructure:"models"`
 	Language     string                 `yaml:"language" mapstructure:"language"`
+	PRTemplate   *PRTemplateConfig      `yaml:"pr_template" mapstructure:"pr_template"`
+}
+
+// PRTemplateConfig represents the PR template configuration
+type PRTemplateConfig struct {
+	Template string `yaml:"template" mapstructure:"template"` // Inline template content
+	File     string `yaml:"file" mapstructure:"file"`         // Path to template file
 }
 
 // ModelConfig represents a single model configuration
@@ -131,6 +139,44 @@ func (c *Config) GetLanguage(langParam string) string {
 
 	// Default to English
 	return "en"
+}
+
+// GetPRTemplate returns the PR template content
+// Priority: inline template > file template > empty string (use default)
+// Returns the template content and any error encountered
+func (c *Config) GetPRTemplate() (string, error) {
+	if c.PRTemplate == nil {
+		return "", nil
+	}
+
+	// Inline template has priority
+	if c.PRTemplate.Template != "" {
+		return c.PRTemplate.Template, nil
+	}
+
+	// Load from file if specified
+	if c.PRTemplate.File != "" {
+		// Expand ~ to home directory
+		filePath := c.PRTemplate.File
+		if strings.HasPrefix(filePath, "~/") {
+			homeDir, err := os.UserHomeDir()
+			if err != nil {
+				return "", fmt.Errorf("failed to get home directory: %w", err)
+			}
+			filePath = filepath.Join(homeDir, filePath[2:])
+		}
+
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return "", fmt.Errorf("PR template file not found: %s", filePath)
+			}
+			return "", fmt.Errorf("failed to read PR template file: %w", err)
+		}
+		return string(content), nil
+	}
+
+	return "", nil
 }
 
 // expandEnv expands environment variables in the format ${VAR} or $VAR
