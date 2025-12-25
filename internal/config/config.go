@@ -33,6 +33,19 @@ type Config struct {
 	Models       map[string]ModelConfig `yaml:"models" mapstructure:"models"`
 	Language     string                 `yaml:"language" mapstructure:"language"`
 	PRTemplate   *PRTemplateConfig      `yaml:"pr_template" mapstructure:"pr_template"`
+	Review       *ReviewConfig          `yaml:"review" mapstructure:"review"`
+}
+
+// ReviewConfig represents the review command configuration
+type ReviewConfig struct {
+	MaxLinesPerRead int `yaml:"max_lines_per_read" mapstructure:"max_lines_per_read"`
+}
+
+// DefaultReviewConfig returns the default review configuration
+func DefaultReviewConfig() *ReviewConfig {
+	return &ReviewConfig{
+		MaxLinesPerRead: 1000,
+	}
 }
 
 // PRTemplateConfig represents the PR template configuration
@@ -139,6 +152,18 @@ func (c *Config) GetLanguage(langParam string) string {
 
 	// Default to English
 	return "en"
+}
+
+// GetReviewConfig returns the review configuration with defaults applied
+func (c *Config) GetReviewConfig() *ReviewConfig {
+	if c.Review == nil {
+		return DefaultReviewConfig()
+	}
+	// Apply defaults for unset values
+	if c.Review.MaxLinesPerRead <= 0 {
+		c.Review.MaxLinesPerRead = 1000
+	}
+	return c.Review
 }
 
 // GetPRTemplate returns the PR template content

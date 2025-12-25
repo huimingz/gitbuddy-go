@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"reflect"
 	"strings"
 
 	"github.com/fatih/color"
@@ -160,4 +161,234 @@ func ShowReport(report ReportDisplayer, output io.Writer) error {
 
 	_, err = cyan.Fprintln(output, "════════════════════════════════════════════════════════════════════════════════")
 	return err
+}
+
+// ReviewIssue represents a single code review issue for display
+type ReviewIssue struct {
+	Severity    string
+	Category    string
+	File        string
+	Line        int
+	Title       string
+	Description string
+	Suggestion  string
+}
+
+// ReviewResultDisplayer is an interface for review responses that can be displayed
+type ReviewResultDisplayer interface {
+	GetSummary() string
+	GetIssueCount() int
+	GetIssueAt(index int) ReviewIssue
+}
+
+// ShowReviewResult displays a formatted code review result
+func ShowReviewResult(review interface{}, output io.Writer) error {
+	bold := color.New(color.Bold)
+	cyan := color.New(color.FgCyan)
+	red := color.New(color.FgRed)
+	yellow := color.New(color.FgYellow)
+	blue := color.New(color.FgBlue)
+	green := color.New(color.FgGreen)
+	dim := color.New(color.FgHiBlack)
+
+	var issues []ReviewIssue
+	var summary string
+
+	// Get summary through interface
+	if r, ok := review.(interface{ GetSummary() string }); ok {
+		summary = r.GetSummary()
+	}
+
+	// Use reflection to get issues from agent.ReviewResponse
+	// This works because agent.ReviewIssue has the same fields as ui.ReviewIssue
+	rv := reflect.ValueOf(review)
+	if rv.Kind() == reflect.Ptr {
+		rv = rv.Elem()
+	}
+
+	if rv.Kind() == reflect.Struct {
+		issuesField := rv.FieldByName("Issues")
+		if issuesField.IsValid() && issuesField.Kind() == reflect.Slice {
+			for i := 0; i < issuesField.Len(); i++ {
+				item := issuesField.Index(i)
+				if item.Kind() == reflect.Struct {
+					issue := ReviewIssue{
+						Severity:    getStringField(item, "Severity"),
+						Category:    getStringField(item, "Category"),
+						File:        getStringField(item, "File"),
+						Line:        getIntField(item, "Line"),
+						Title:       getStringField(item, "Title"),
+						Description: getStringField(item, "Description"),
+						Suggestion:  getStringField(item, "Suggestion"),
+					}
+					issues = append(issues, issue)
+				}
+			}
+		}
+	}
+
+	// Header
+	_, err := bold.Fprintln(output, "\n🔍 Code Review Results:")
+	if err != nil {
+		return err
+	}
+
+	_, err = cyan.Fprintln(output, "════════════════════════════════════════════════════════════════════════════════")
+	if err != nil {
+		return err
+	}
+
+	// Count issues by severity
+	errorCount := 0
+	warningCount := 0
+	infoCount := 0
+
+	for _, issue := range issues {
+		switch issue.Severity {
+		case "error":
+			errorCount++
+		case "warning":
+			warningCount++
+		case "info":
+			infoCount++
+		}
+	}
+
+	// Summary stats
+	if len(issues) == 0 {
+		_, err = green.Fprintln(output, "✅ No issues found!")
+	} else {
+		_, err = fmt.Fprintf(output, "Found %d issue(s): ", len(issues))
+		if errorCount > 0 {
+			_, _ = red.Fprintf(output, "%d error(s) ", errorCount)
+		}
+		if warningCount > 0 {
+			_, _ = yellow.Fprintf(output, "%d warning(s) ", warningCount)
+		}
+		if infoCount > 0 {
+			_, _ = blue.Fprintf(output, "%d suggestion(s)", infoCount)
+		}
+		_, err = fmt.Fprintln(output)
+	}
+	if err != nil {
+		return err
+	}
+
+	_, err = cyan.Fprintln(output, "────────────────────────────────────────────────────────────────────────────────")
+	if err != nil {
+		return err
+	}
+
+	// Display issues grouped by severity
+	severityOrder := []string{"error", "warning", "info"}
+	severityEmoji := map[string]string{
+		"error":   "🔴",
+		"warning": "🟡",
+		"info":    "🔵",
+	}
+	severityColor := map[string]*color.Color{
+		"error":   red,
+		"warning": yellow,
+		"info":    blue,
+	}
+
+	for _, severity := range severityOrder {
+		for i, issue := range issues {
+			if issue.Severity != severity {
+				continue
+			}
+
+			emoji := severityEmoji[issue.Severity]
+			clr := severityColor[issue.Severity]
+
+			// Issue header
+			_, err = clr.Fprintf(output, "\n%s [%s] ", emoji, strings.ToUpper(issue.Severity))
+			if err != nil {
+				return err
+			}
+			_, err = bold.Fprintln(output, issue.Title)
+			if err != nil {
+				return err
+			}
+
+			// Location
+			if issue.File != "" {
+				location := issue.File
+				if issue.Line > 0 {
+					location = fmt.Sprintf("%s:%d", issue.File, issue.Line)
+				}
+				_, err = dim.Fprintf(output, "   📍 %s\n", location)
+				if err != nil {
+					return err
+				}
+			}
+
+			// Category
+			_, err = dim.Fprintf(output, "   🏷️  %s\n", issue.Category)
+			if err != nil {
+				return err
+			}
+
+			// Description
+			_, err = fmt.Fprintf(output, "   %s\n", issue.Description)
+			if err != nil {
+				return err
+			}
+
+			// Suggestion
+			if issue.Suggestion != "" {
+				_, err = green.Fprintf(output, "   💡 %s\n", issue.Suggestion)
+				if err != nil {
+					return err
+				}
+			}
+
+			// Add separator between issues (but not after the last one)
+			if i < len(issues)-1 {
+				_, err = dim.Fprintln(output, "   ─ ─ ─ ─ ─ ─ ─ ─ ─ ─")
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	// Summary section
+	if summary != "" {
+		_, err = cyan.Fprintln(output, "\n────────────────────────────────────────────────────────────────────────────────")
+		if err != nil {
+			return err
+		}
+
+		_, err = bold.Fprintln(output, "📋 Summary:")
+		if err != nil {
+			return err
+		}
+
+		_, err = fmt.Fprintln(output, summary)
+		if err != nil {
+			return err
+		}
+	}
+
+	_, err = cyan.Fprintln(output, "════════════════════════════════════════════════════════════════════════════════")
+	return err
+}
+
+// getStringField gets a string field from a reflect.Value struct
+func getStringField(v reflect.Value, name string) string {
+	field := v.FieldByName(name)
+	if field.IsValid() && field.Kind() == reflect.String {
+		return field.String()
+	}
+	return ""
+}
+
+// getIntField gets an int field from a reflect.Value struct
+func getIntField(v reflect.Value, name string) int {
+	field := v.FieldByName(name)
+	if field.IsValid() && field.Kind() == reflect.Int {
+		return int(field.Int())
+	}
+	return 0
 }
