@@ -27,6 +27,7 @@ GitBuddy-Goは、日常のGitワークフローを自動化・強化するAI駆�
 
 - **🎯 スマートコミットメッセージ**: ステージングされた変更を自動分析し、[Conventional Commits](https://www.conventionalcommits.org/)準拠のメッセージを生成
 - **📝 PR説明ジェネレーター**: 概要、変更内容、動機、影響分析を含む包括的なPR説明を作成
+- **🔍 コードレビュー**: バグ、セキュリティ問題、パフォーマンス問題、スタイル提案を識別するAI駆動のコードレビュー
 - **📊 開発レポート**: コミット履歴から構造化された週次/月次レポートを生成
 - **🌍 多言語対応**: 任意の言語で出力可能（日本語、英語、中国語など）
 - **🔧 複数LLMプロバイダー対応**: OpenAI、DeepSeek、Ollama、Grok、Google Geminiをサポート
@@ -181,6 +182,33 @@ gitbuddy report --since 2024-12-01 --author "john@example.com"
 gitbuddy report --since 2024-12-01 -l ja
 ```
 
+### コードレビュー
+
+```bash
+# ステージングされたすべての変更をレビュー
+gitbuddy review
+
+# 追加のコンテキストを提供
+gitbuddy review -c "これは認証モジュールです"
+
+# 特定のファイルのみレビュー
+gitbuddy review --files "auth.go,crypto.go"
+
+# エラーのみ表示（警告と情報を除外）
+gitbuddy review --severity error
+
+# セキュリティとパフォーマンスの問題に焦点を当てる
+gitbuddy review --focus security,performance
+
+# 日本語で出力
+gitbuddy review -l ja
+```
+
+コードレビューは以下の種類の問題を識別します：
+- 🔴 **エラー**: バグ、クラッシュ、重大な問題
+- 🟡 **警告**: 潜在的なバグ、パフォーマンス問題
+- 🔵 **情報**: スタイル提案、リファクタリングの機会
+
 ### その他のコマンド
 
 ```bash
@@ -231,6 +259,12 @@ GitBuddyは**エージェントアプローチ**を採用しており、LLMが�
    - LLMが日付フィルター付きで`git log`を呼び出し
    - コミットを分析・分類
    - `submit_report`ツールでレポートを生成
+
+4. **コードレビュー時**:
+   - LLMが`git diff --cached`を呼び出してステージングされた変更を分析
+   - LLMが`read_file`を呼び出してより深いコンテキストのためにソースコードを調査
+   - バグ、セキュリティ問題、パフォーマンス問題を識別
+   - `submit_review`ツールでレビューを生成
 
 このエージェントアプローチにより、LLMは必要なコンテキストを正確に収集でき、より正確で関連性の高い出力を生成できます。
 

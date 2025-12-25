@@ -27,6 +27,7 @@ GitBuddy-Go 是一个 AI 驱动的命令行工具，用于自动化和增强日�
 
 - **🎯 智能 Commit 信息**: 自动分析暂存区变更，生成符合 [Conventional Commits](https://www.conventionalcommits.org/) 规范的提交信息
 - **📝 PR 描述生成器**: 创建包含摘要、变更内容、动机和影响分析的完整 PR 描述
+- **🔍 代码审查**: AI 驱动的代码审查，识别 bugs、安全隐患、性能问题和代码风格建议
 - **📊 开发报告**: 根据提交历史生成结构化的周报/月报
 - **🌍 多语言支持**: 支持任意语言输出（中文、英文、日文等）
 - **🔧 多 LLM 支持**: 支持 OpenAI、DeepSeek、Ollama、Grok 和 Google Gemini
@@ -181,6 +182,33 @@ gitbuddy report --since 2024-12-01 --author "john@example.com"
 gitbuddy report --since 2024-12-01 -l zh
 ```
 
+### 代码审查
+
+```bash
+# 审查所有暂存区变更
+gitbuddy review
+
+# 提供额外上下文
+gitbuddy review -c "这是一个用户认证模块"
+
+# 只审查指定文件
+gitbuddy review --files "auth.go,crypto.go"
+
+# 只显示错误级别问题
+gitbuddy review --severity error
+
+# 重点关注安全和性能问题
+gitbuddy review --focus security,performance
+
+# 使用中文输出
+gitbuddy review -l zh
+```
+
+代码审查会识别以下类型的问题：
+- 🔴 **错误**: bugs、崩溃、关键问题
+- 🟡 **警告**: 潜在 bugs、性能问题
+- 🔵 **建议**: 代码风格、重构建议
+
 ### 其他命令
 
 ```bash
@@ -231,6 +259,12 @@ GitBuddy 采用 **Agent 方式**，LLM 自主决定执行哪些 Git 命令：
    - LLM 调用 `git log` 并应用日期过滤
    - 分析并分类提交
    - 通过 `submit_report` 工具生成报告
+
+4. **代码审查时**:
+   - LLM 调用 `git diff --cached` 分析暂存区变更
+   - LLM 调用 `read_file` 读取源代码获取更多上下文
+   - 识别 bugs、安全隐患、性能问题
+   - 通过 `submit_review` 工具生成审查报告
 
 这种 Agent 方式让 LLM 能够准确获取所需的上下文，从而生成更准确、更相关的输出。
 

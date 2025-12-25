@@ -27,6 +27,7 @@ GitBuddy-Go is an AI-powered command-line tool that automates and enhances your 
 
 - **🎯 Smart Commit Messages**: Automatically generates [Conventional Commits](https://www.conventionalcommits.org/) compliant messages by analyzing staged changes
 - **📝 PR Description Generator**: Creates comprehensive pull request descriptions with summary, changes, motivation, and impact analysis
+- **🔍 Code Review**: AI-powered code review that identifies bugs, security issues, performance problems, and style suggestions
 - **📊 Development Reports**: Generates structured weekly/monthly development reports from commit history
 - **🌍 Multi-Language Support**: Generate output in any language (English, Chinese, Japanese, etc.)
 - **🔧 Multiple LLM Providers**: Supports OpenAI, DeepSeek, Ollama, Grok, and Google Gemini
@@ -181,6 +182,33 @@ gitbuddy report --since 2024-12-01 --author "john@example.com"
 gitbuddy report --since 2024-12-01 -l zh
 ```
 
+### Code Review
+
+```bash
+# Review all staged changes
+gitbuddy review
+
+# Review with additional context
+gitbuddy review -c "This is an authentication module"
+
+# Review specific files only
+gitbuddy review --files "auth.go,crypto.go"
+
+# Only show errors (filter out warnings and info)
+gitbuddy review --severity error
+
+# Focus on security and performance issues
+gitbuddy review --focus security,performance
+
+# Review in Chinese
+gitbuddy review -l zh
+```
+
+The review command identifies:
+- 🔴 **Errors**: Bugs, crashes, critical issues
+- 🟡 **Warnings**: Potential bugs, performance issues
+- 🔵 **Info**: Style suggestions, refactoring opportunities
+
 ### Other Commands
 
 ```bash
@@ -231,6 +259,12 @@ GitBuddy uses an **agentic approach** where the LLM autonomously decides which G
    - LLM calls `git log` with date filters
    - Analyzes and categorizes commits
    - Generates report via `submit_report` tool
+
+4. **For Code Review**:
+   - LLM calls `git diff --cached` to analyze staged changes
+   - LLM calls `read_file` to examine source code for deeper context
+   - Identifies bugs, security issues, performance problems
+   - Generates review via `submit_review` tool
 
 This agentic approach allows the LLM to gather exactly the context it needs, resulting in more accurate and relevant output.
 
