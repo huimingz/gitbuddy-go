@@ -159,18 +159,19 @@ func runDebug(cmd *cobra.Command, args []string) error {
 
 	// Perform debugging
 	req := agent.DebugRequest{
-		Issue:                 issue,
-		Language:              language,
-		Context:               debugContext,
-		Files:                 files,
-		WorkDir:               workDir,
-		IssuesDir:             issuesDir,
-		MaxLines:              debugCfg.MaxLinesPerRead,
-		MaxIterations:         maxIterations,
-		Interactive:           debugInteractive,
-		EnableCompression:     debugCfg.EnableCompression,
-		CompressionThreshold:  debugCfg.CompressionThreshold,
-		CompressionKeepRecent: debugCfg.CompressionKeepRecent,
+		Issue:                  issue,
+		Language:               language,
+		Context:                debugContext,
+		Files:                  files,
+		WorkDir:                workDir,
+		IssuesDir:              issuesDir,
+		MaxLines:               debugCfg.MaxLinesPerRead,
+		MaxIterations:          maxIterations,
+		Interactive:            debugInteractive,
+		EnableCompression:      debugCfg.EnableCompression,
+		CompressionThreshold:   debugCfg.CompressionThreshold,
+		CompressionKeepRecent:  debugCfg.CompressionKeepRecent,
+		ShowCompressionSummary: debugCfg.ShowCompressionSummary,
 	}
 
 	response, err := debugAgent.Debug(ctx, req)

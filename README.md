@@ -137,15 +137,16 @@ review:
 
 # Debug settings (optional)
 debug:
-  issues_dir: ./issues          # Directory to save debug reports
-  max_iterations: 30            # Maximum agent iterations before asking to continue
-  enable_compression: true      # Enable message history compression
-  compression_threshold: 20     # Compress when message count exceeds this
-  compression_keep_recent: 10   # Number of recent messages to keep after compression
-  max_lines_per_read: 1000      # Maximum lines to read per file operation
-  grep_max_file_size: 10        # Maximum file size for grep in MB
-  grep_timeout: 10              # Grep operation timeout in seconds
-  grep_max_results: 100         # Maximum number of grep results
+  issues_dir: ./issues           # Directory to save debug reports
+  max_iterations: 30             # Maximum agent iterations before asking to continue
+  enable_compression: true       # Enable message history compression
+  compression_threshold: 20      # Compress when message count exceeds this
+  compression_keep_recent: 10    # Number of recent messages to keep after compression
+  show_compression_summary: false # Show compression summary to user (default: false)
+  max_lines_per_read: 1000       # Maximum lines to read per file operation
+  grep_max_file_size: 10         # Maximum file size for grep in MB
+  grep_timeout: 10               # Grep operation timeout in seconds
+  grep_max_results: 100          # Maximum number of grep results
 ```
 
 ### Configuration Priority

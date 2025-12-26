@@ -22,18 +22,19 @@ import (
 
 // DebugRequest contains the input for debugging
 type DebugRequest struct {
-	Issue                 string   // Issue description from user
-	Language              string   // Output language
-	Context               string   // Additional context
-	Files                 []string // Specific files to investigate
-	WorkDir               string   // Working directory
-	IssuesDir             string   // Directory to save reports
-	MaxLines              int      // Maximum lines per file read
-	MaxIterations         int      // Maximum number of agent iterations
-	Interactive           bool     // Enable interactive feedback
-	EnableCompression     bool     // Enable message history compression
-	CompressionThreshold  int      // Number of messages before compression
-	CompressionKeepRecent int      // Number of recent messages to keep after compression
+	Issue                  string   // Issue description from user
+	Language               string   // Output language
+	Context                string   // Additional context
+	Files                  []string // Specific files to investigate
+	WorkDir                string   // Working directory
+	IssuesDir              string   // Directory to save reports
+	MaxLines               int      // Maximum lines per file read
+	MaxIterations          int      // Maximum number of agent iterations
+	Interactive            bool     // Enable interactive feedback
+	EnableCompression      bool     // Enable message history compression
+	CompressionThreshold   int      // Number of messages before compression
+	CompressionKeepRecent  int      // Number of recent messages to keep after compression
+	ShowCompressionSummary bool     // Show compression summary to user
 }
 
 // DebugResponse contains the result of debugging
@@ -604,15 +605,22 @@ func (a *DebugAgent) Debug(ctx context.Context, req DebugRequest) (*DebugRespons
 
 		// Compress message history if enabled and threshold is reached
 		if req.EnableCompression && len(messages) > req.CompressionThreshold {
-			compressedMessages, err := compressMessageHistoryWithLLM(ctx, chatModel, messages, req.CompressionKeepRecent)
+			oldLen := len(messages)
+			compressedMessages, summary, err := compressMessageHistoryWithLLM(ctx, chatModel, messages, req.CompressionKeepRecent)
 			if err != nil {
 				log.Debug("Failed to compress message history with LLM: %v", err)
 				// Fallback to simple compression if LLM compression fails
-				messages = simpleCompressMessageHistory(messages, req.CompressionKeepRecent)
-			} else {
-				messages = compressedMessages
+				compressedMessages, summary = simpleCompressMessageHistory(messages, req.CompressionKeepRecent)
 			}
-			printProgress(fmt.Sprintf("Message history compressed (%d -> %d messages)", len(messages), len(compressedMessages)))
+			messages = compressedMessages
+
+			// Show compression info
+			printProgress(fmt.Sprintf("Message history compressed (%d -> %d messages)", oldLen, len(compressedMessages)))
+
+			// Optionally show summary to user
+			if req.ShowCompressionSummary && summary != "" {
+				printInfo(fmt.Sprintf("\n📝 Compression Summary:\n%s\n", summary))
+			}
 		}
 	}
 
@@ -621,15 +629,17 @@ func (a *DebugAgent) Debug(ctx context.Context, req DebugRequest) (*DebugRespons
 
 // compressMessageHistoryWithLLM uses LLM to intelligently compress old message history
 // while preserving key information and keeping recent messages intact
+// Returns: compressed messages, summary text, error
 // chatModel parameter should be the same model.ChatModel returned by CreateChatModel
-func compressMessageHistoryWithLLM(ctx context.Context, chatModel interface{}, messages []*schema.Message, keepLastN int) ([]*schema.Message, error) {
-	if len(messages) <= keepLastN+1 { // +1 for system message
-		return messages, nil
+func compressMessageHistoryWithLLM(ctx context.Context, chatModel interface{}, messages []*schema.Message, keepLastN int) ([]*schema.Message, string, error) {
+	if len(messages) <= keepLastN+2 { // +2 for system message and first user message
+		return messages, "", nil
 	}
 
-	// Structure: [system, ...old messages to compress..., ...recent messages to keep...]
+	// Structure: [system, first_user_msg, ...old messages to compress..., ...recent messages to keep...]
 	systemMsg := messages[0]
-	oldMessages := messages[1 : len(messages)-keepLastN]
+	firstUserMsg := messages[1] // Keep the original task/goal
+	oldMessages := messages[2 : len(messages)-keepLastN]
 	recentMessages := messages[len(messages)-keepLastN:]
 
 	// Build a summary request for the old messages
@@ -681,7 +691,7 @@ func compressMessageHistoryWithLLM(ctx context.Context, chatModel interface{}, m
 	// Use reflection to call Stream method dynamically
 	streamMethod := reflect.ValueOf(chatModel).MethodByName("Stream")
 	if !streamMethod.IsValid() {
-		return nil, fmt.Errorf("chat model does not have Stream method")
+		return nil, "", fmt.Errorf("chat model does not have Stream method")
 	}
 
 	results := streamMethod.Call([]reflect.Value{
@@ -690,12 +700,12 @@ func compressMessageHistoryWithLLM(ctx context.Context, chatModel interface{}, m
 	})
 
 	if len(results) != 2 {
-		return nil, fmt.Errorf("unexpected Stream method signature")
+		return nil, "", fmt.Errorf("unexpected Stream method signature")
 	}
 
 	// Check for error
 	if !results[1].IsNil() {
-		return nil, fmt.Errorf("failed to generate summary: %w", results[1].Interface().(error))
+		return nil, "", fmt.Errorf("failed to generate summary: %w", results[1].Interface().(error))
 	}
 
 	streamReader := results[0].Interface()
@@ -712,13 +722,13 @@ func compressMessageHistoryWithLLM(ctx context.Context, chatModel interface{}, m
 	var summary strings.Builder
 	recvMethod := reflect.ValueOf(streamReader).MethodByName("Recv")
 	if !recvMethod.IsValid() {
-		return nil, fmt.Errorf("stream reader does not have Recv method")
+		return nil, "", fmt.Errorf("stream reader does not have Recv method")
 	}
 
 	for {
 		results := recvMethod.Call(nil)
 		if len(results) != 2 {
-			return nil, fmt.Errorf("unexpected Recv method signature")
+			return nil, "", fmt.Errorf("unexpected Recv method signature")
 		}
 
 		// Check for error
@@ -727,7 +737,7 @@ func compressMessageHistoryWithLLM(ctx context.Context, chatModel interface{}, m
 			if err == io.EOF {
 				break
 			}
-			return nil, fmt.Errorf("stream read error: %w", err)
+			return nil, "", fmt.Errorf("stream read error: %w", err)
 		}
 
 		// Extract content from chunk
@@ -754,12 +764,14 @@ func compressMessageHistoryWithLLM(ctx context.Context, chatModel interface{}, m
 
 	summaryText := summary.String()
 	if summaryText == "" {
-		return nil, fmt.Errorf("empty summary generated")
+		return nil, "", fmt.Errorf("empty summary generated")
 	}
 
 	// Build compressed message history
+	// Keep: system message, first user message (task/goal), summary, recent messages
 	compressed := []*schema.Message{
 		systemMsg,
+		firstUserMsg, // Keep the original task/goal
 		{
 			Role:    schema.User,
 			Content: fmt.Sprintf("[Previous Session Summary]\n%s\n\n[Continuing from here...]", summaryText),
@@ -767,20 +779,22 @@ func compressMessageHistoryWithLLM(ctx context.Context, chatModel interface{}, m
 	}
 	compressed = append(compressed, recentMessages...)
 
-	log.Debug("Compressed %d messages into summary, keeping %d recent messages", len(oldMessages), len(recentMessages))
-	return compressed, nil
+	log.Debug("Compressed %d messages into summary, keeping first user message and %d recent messages", len(oldMessages), len(recentMessages))
+	return compressed, summaryText, nil
 }
 
 // simpleCompressMessageHistory is a fallback that truncates old messages
 // but adds a summary message to preserve context
-func simpleCompressMessageHistory(messages []*schema.Message, keepLastN int) []*schema.Message {
-	if len(messages) <= keepLastN+1 {
-		return messages
+// Returns: compressed messages, summary text
+func simpleCompressMessageHistory(messages []*schema.Message, keepLastN int) ([]*schema.Message, string) {
+	if len(messages) <= keepLastN+2 { // +2 for system and first user message
+		return messages, ""
 	}
 
-	// Structure: [system, ...old messages..., ...recent messages...]
+	// Structure: [system, first_user_msg, ...old messages..., ...recent messages...]
 	systemMsg := messages[0]
-	oldMessages := messages[1 : len(messages)-keepLastN]
+	firstUserMsg := messages[1] // Keep the original task/goal
+	oldMessages := messages[2 : len(messages)-keepLastN]
 	recentMessages := messages[len(messages)-keepLastN:]
 
 	// Build a simple text summary of old messages
@@ -815,16 +829,20 @@ func simpleCompressMessageHistory(messages []*schema.Message, keepLastN int) []*
 
 	summaryBuilder.WriteString("\nContinuing from the most recent context...\n")
 
+	summaryText := summaryBuilder.String()
+
 	// Build compressed message history
+	// Keep: system message, first user message (task/goal), summary, recent messages
 	compressed := []*schema.Message{
 		systemMsg,
+		firstUserMsg, // Keep the original task/goal
 		{
 			Role:    schema.User,
-			Content: summaryBuilder.String(),
+			Content: summaryText,
 		},
 	}
 	compressed = append(compressed, recentMessages...)
 
-	log.Debug("Simple compression: %d messages -> %d messages (kept %d recent)", len(messages), len(compressed), len(recentMessages))
-	return compressed
+	log.Debug("Simple compression: %d messages -> %d messages (kept first user message and %d recent)", len(messages), len(compressed), len(recentMessages))
+	return compressed, summaryText
 }

@@ -57,29 +57,31 @@ func DefaultReviewConfig() *ReviewConfig {
 
 // DebugConfig represents the debug command configuration
 type DebugConfig struct {
-	MaxLinesPerRead       int    `yaml:"max_lines_per_read" mapstructure:"max_lines_per_read"`
-	IssuesDir             string `yaml:"issues_dir" mapstructure:"issues_dir"`
-	MaxIterations         int    `yaml:"max_iterations" mapstructure:"max_iterations"`
-	EnableCompression     bool   `yaml:"enable_compression" mapstructure:"enable_compression"`
-	CompressionThreshold  int    `yaml:"compression_threshold" mapstructure:"compression_threshold"`     // Number of messages before compression
-	CompressionKeepRecent int    `yaml:"compression_keep_recent" mapstructure:"compression_keep_recent"` // Number of recent messages to keep
-	GrepMaxFileSize       int    `yaml:"grep_max_file_size" mapstructure:"grep_max_file_size"`           // in MB
-	GrepTimeout           int    `yaml:"grep_timeout" mapstructure:"grep_timeout"`                       // in seconds
-	GrepMaxResults        int    `yaml:"grep_max_results" mapstructure:"grep_max_results"`
+	MaxLinesPerRead        int    `yaml:"max_lines_per_read" mapstructure:"max_lines_per_read"`
+	IssuesDir              string `yaml:"issues_dir" mapstructure:"issues_dir"`
+	MaxIterations          int    `yaml:"max_iterations" mapstructure:"max_iterations"`
+	EnableCompression      bool   `yaml:"enable_compression" mapstructure:"enable_compression"`
+	CompressionThreshold   int    `yaml:"compression_threshold" mapstructure:"compression_threshold"`       // Number of messages before compression
+	CompressionKeepRecent  int    `yaml:"compression_keep_recent" mapstructure:"compression_keep_recent"`   // Number of recent messages to keep
+	ShowCompressionSummary bool   `yaml:"show_compression_summary" mapstructure:"show_compression_summary"` // Show compression summary to user
+	GrepMaxFileSize        int    `yaml:"grep_max_file_size" mapstructure:"grep_max_file_size"`             // in MB
+	GrepTimeout            int    `yaml:"grep_timeout" mapstructure:"grep_timeout"`                         // in seconds
+	GrepMaxResults         int    `yaml:"grep_max_results" mapstructure:"grep_max_results"`
 }
 
 // DefaultDebugConfig returns the default debug configuration
 func DefaultDebugConfig() *DebugConfig {
 	return &DebugConfig{
-		MaxLinesPerRead:       1000,
-		IssuesDir:             "./issues",
-		MaxIterations:         30,   // 30 iterations
-		EnableCompression:     true, // Enable compression by default
-		CompressionThreshold:  20,   // Compress when > 20 messages
-		CompressionKeepRecent: 10,   // Keep last 10 messages
-		GrepMaxFileSize:       10,   // 10 MB
-		GrepTimeout:           10,   // 10 seconds
-		GrepMaxResults:        100,  // 100 results
+		MaxLinesPerRead:        1000,
+		IssuesDir:              "./issues",
+		MaxIterations:          30,    // 30 iterations
+		EnableCompression:      true,  // Enable compression by default
+		CompressionThreshold:   20,    // Compress when > 20 messages
+		CompressionKeepRecent:  10,    // Keep last 10 messages
+		ShowCompressionSummary: false, // Don't show summary by default
+		GrepMaxFileSize:        10,    // 10 MB
+		GrepTimeout:            10,    // 10 seconds
+		GrepMaxResults:         100,   // 100 results
 	}
 }
 
