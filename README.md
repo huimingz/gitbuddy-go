@@ -126,6 +126,13 @@ models:
 
 # Default output language
 language: en
+
+# Code review settings (optional)
+review:
+  max_lines_per_read: 1000      # Maximum lines to read per file operation
+  grep_max_file_size: 10        # Maximum file size for grep in MB
+  grep_timeout: 10              # Grep operation timeout in seconds
+  grep_max_results: 100         # Maximum number of grep results
 ```
 
 ### Configuration Priority
@@ -262,7 +269,9 @@ GitBuddy uses an **agentic approach** where the LLM autonomously decides which G
 
 4. **For Code Review**:
    - LLM calls `git diff --cached` to analyze staged changes
-   - LLM calls `read_file` to examine source code for deeper context
+   - LLM uses `grep_file` to quickly locate specific functions or patterns in files
+   - LLM uses `grep_directory` to find code patterns across multiple files
+   - LLM calls `read_file` to examine complete source code context when needed
    - Identifies bugs, security issues, performance problems
    - Generates review via `submit_review` tool
 

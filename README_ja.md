@@ -126,6 +126,13 @@ models:
 
 # デフォルト出力言語
 language: ja
+
+# コードレビュー設定（オプション）
+review:
+  max_lines_per_read: 1000      # ファイル操作ごとの最大読み取り行数
+  grep_max_file_size: 10        # grep の最大ファイルサイズ（MB）
+  grep_timeout: 10              # grep 操作のタイムアウト（秒）
+  grep_max_results: 100         # grep の最大結果数
 ```
 
 ### 設定の優先順位
@@ -262,7 +269,9 @@ GitBuddyは**エージェントアプローチ**を採用しており、LLMが�
 
 4. **コードレビュー時**:
    - LLMが`git diff --cached`を呼び出してステージングされた変更を分析
-   - LLMが`read_file`を呼び出してより深いコンテキストのためにソースコードを調査
+   - LLMが`grep_file`を使用してファイル内の特定の関数やパターンを素早く検索
+   - LLMが`grep_directory`を使用して複数のファイルからコードパターンを検索
+   - 必要に応じてLLMが`read_file`を呼び出して完全なソースコードのコンテキストを調査
    - バグ、セキュリティ問題、パフォーマンス問題を識別
    - `submit_review`ツールでレビューを生成
 

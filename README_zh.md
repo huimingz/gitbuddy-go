@@ -126,6 +126,13 @@ models:
 
 # 默认输出语言
 language: zh
+
+# 代码审查设置（可选）
+review:
+  max_lines_per_read: 1000      # 每次文件操作最多读取的行数
+  grep_max_file_size: 10        # grep 最大文件大小（MB）
+  grep_timeout: 10              # grep 操作超时时间（秒）
+  grep_max_results: 100         # grep 最大结果数量
 ```
 
 ### 配置优先级
@@ -262,7 +269,9 @@ GitBuddy 采用 **Agent 方式**，LLM 自主决定执行哪些 Git 命令：
 
 4. **代码审查时**:
    - LLM 调用 `git diff --cached` 分析暂存区变更
-   - LLM 调用 `read_file` 读取源代码获取更多上下文
+   - LLM 使用 `grep_file` 快速定位文件中的特定函数或模式
+   - LLM 使用 `grep_directory` 在多个文件中查找代码模式
+   - LLM 在需要时调用 `read_file` 读取完整的源代码上下文
    - 识别 bugs、安全隐患、性能问题
    - 通过 `submit_review` 工具生成审查报告
 
