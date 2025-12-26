@@ -22,14 +22,15 @@ import (
 
 // DebugRequest contains the input for debugging
 type DebugRequest struct {
-	Issue       string   // Issue description from user
-	Language    string   // Output language
-	Context     string   // Additional context
-	Files       []string // Specific files to investigate
-	WorkDir     string   // Working directory
-	IssuesDir   string   // Directory to save reports
-	MaxLines    int      // Maximum lines per file read
-	Interactive bool     // Enable interactive feedback
+	Issue         string   // Issue description from user
+	Language      string   // Output language
+	Context       string   // Additional context
+	Files         []string // Specific files to investigate
+	WorkDir       string   // Working directory
+	IssuesDir     string   // Directory to save reports
+	MaxLines      int      // Maximum lines per file read
+	MaxIterations int      // Maximum number of agent iterations
+	Interactive   bool     // Enable interactive feedback
 }
 
 // DebugResponse contains the result of debugging
@@ -327,11 +328,38 @@ func (a *DebugAgent) Debug(ctx context.Context, req DebugRequest) (*DebugRespons
 	}
 
 	var promptTokens, completionTokens, totalTokens int
-	maxIterations := 30 // Allow many iterations for thorough debugging
+
+	// Use configured max iterations, default to 30 if not set
+	maxIterations := req.MaxIterations
+	if maxIterations <= 0 {
+		maxIterations = 30
+	}
 
 	// Agent loop
-	for i := 0; i < maxIterations; i++ {
-		printProgress(fmt.Sprintf("Agent iteration %d...", i+1))
+	iterationCount := 0
+	for {
+		iterationCount++
+
+		// Check if we've exceeded max iterations
+		if iterationCount > maxIterations {
+			printProgress(fmt.Sprintf("Reached maximum iterations (%d)", maxIterations))
+
+			// Ask user if they want to continue (only in interactive mode)
+			if req.Interactive {
+				fmt.Fprintf(a.opts.Output, "\n")
+				shouldContinue, err := ui.ConfirmWithDefault("Continue debugging for another batch of iterations?", false, a.opts.Input, a.opts.Output)
+				if err != nil || !shouldContinue {
+					return nil, fmt.Errorf("debugging stopped after %d iterations", iterationCount-1)
+				}
+				// Reset max iterations for another batch
+				maxIterations = iterationCount + 30
+				printProgress("Continuing debugging session...")
+			} else {
+				return nil, fmt.Errorf("agent loop exceeded maximum iterations (%d)", maxIterations)
+			}
+		}
+
+		printProgress(fmt.Sprintf("Agent iteration %d...", iterationCount))
 
 		// Stream LLM response
 		streamReader, err := chatModel.Stream(ctx, messages)
@@ -702,10 +730,22 @@ func compressMessageHistoryWithLLM(ctx context.Context, chatModel interface{}, m
 
 		// Extract content from chunk
 		chunk := results[0]
-		contentField := chunk.FieldByName("Content")
-		if contentField.IsValid() && contentField.Kind() == reflect.String {
-			if content := contentField.String(); content != "" {
-				summary.WriteString(content)
+
+		// If chunk is a pointer, dereference it
+		if chunk.Kind() == reflect.Ptr {
+			if chunk.IsNil() {
+				continue
+			}
+			chunk = chunk.Elem()
+		}
+
+		// Try to get Content field
+		if chunk.Kind() == reflect.Struct {
+			contentField := chunk.FieldByName("Content")
+			if contentField.IsValid() && contentField.Kind() == reflect.String {
+				if content := contentField.String(); content != "" {
+					summary.WriteString(content)
+				}
 			}
 		}
 	}

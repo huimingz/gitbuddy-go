@@ -138,6 +138,7 @@ review:
 # 问题排查设置（可选）
 debug:
   issues_dir: ./issues          # 保存调试报告的目录
+  max_iterations: 30            # Agent 最大迭代次数（达到后询问是否继续）
   max_lines_per_read: 1000      # 每次文件操作最多读取的行数
   grep_max_file_size: 10        # grep 最大文件大小（MB）
   grep_timeout: 10              # grep 操作超时时间（秒）
@@ -245,6 +246,11 @@ gitbuddy debug "性能问题" -l zh --interactive
 
 # 指定自定义报告保存目录
 gitbuddy debug "数据库连接超时" --issues-dir ./debug-reports
+
+# 设置最大迭代次数
+gitbuddy debug "复杂问题" --max-iterations 50
+
+# 在交互式模式下，达到最大迭代次数后会询问是否继续
 ```
 
 问题排查功能：

@@ -17,11 +17,12 @@ import (
 )
 
 var (
-	debugContext     string
-	debugLanguage    string
-	debugFiles       string
-	debugInteractive bool
-	debugIssuesDir   string
+	debugContext       string
+	debugLanguage      string
+	debugFiles         string
+	debugInteractive   bool
+	debugIssuesDir     string
+	debugMaxIterations int
 )
 
 var debugCmd = &cobra.Command{
@@ -57,6 +58,7 @@ func init() {
 	debugCmd.Flags().StringVar(&debugFiles, "files", "", "Comma-separated list of files to focus on")
 	debugCmd.Flags().BoolVarP(&debugInteractive, "interactive", "i", false, "Enable interactive mode (agent can ask for your input)")
 	debugCmd.Flags().StringVar(&debugIssuesDir, "issues-dir", "./issues", "Directory to save debug reports")
+	debugCmd.Flags().IntVar(&debugMaxIterations, "max-iterations", 0, "Maximum number of agent iterations (0 = use config default)")
 
 	rootCmd.AddCommand(debugCmd)
 }
@@ -94,11 +96,18 @@ func runDebug(cmd *cobra.Command, args []string) error {
 	debugCfg := cfg.GetDebugConfig()
 	log.Debug("Max lines per read: %d", debugCfg.MaxLinesPerRead)
 	log.Debug("Issues directory: %s", debugCfg.IssuesDir)
+	log.Debug("Max iterations: %d", debugCfg.MaxIterations)
 
 	// Override issues dir if specified
 	issuesDir := debugIssuesDir
 	if issuesDir == "./issues" && debugCfg.IssuesDir != "" {
 		issuesDir = debugCfg.IssuesDir
+	}
+
+	// Override max iterations if specified
+	maxIterations := debugMaxIterations
+	if maxIterations <= 0 {
+		maxIterations = debugCfg.MaxIterations
 	}
 
 	// Create LLM provider
@@ -150,14 +159,15 @@ func runDebug(cmd *cobra.Command, args []string) error {
 
 	// Perform debugging
 	req := agent.DebugRequest{
-		Issue:       issue,
-		Language:    language,
-		Context:     debugContext,
-		Files:       files,
-		WorkDir:     workDir,
-		IssuesDir:   issuesDir,
-		MaxLines:    debugCfg.MaxLinesPerRead,
-		Interactive: debugInteractive,
+		Issue:         issue,
+		Language:      language,
+		Context:       debugContext,
+		Files:         files,
+		WorkDir:       workDir,
+		IssuesDir:     issuesDir,
+		MaxLines:      debugCfg.MaxLinesPerRead,
+		MaxIterations: maxIterations,
+		Interactive:   debugInteractive,
 	}
 
 	response, err := debugAgent.Debug(ctx, req)

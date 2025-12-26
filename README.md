@@ -138,6 +138,7 @@ review:
 # Debug settings (optional)
 debug:
   issues_dir: ./issues          # Directory to save debug reports
+  max_iterations: 30            # Maximum agent iterations before asking to continue
   max_lines_per_read: 1000      # Maximum lines to read per file operation
   grep_max_file_size: 10        # Maximum file size for grep in MB
   grep_timeout: 10              # Grep operation timeout in seconds
@@ -245,6 +246,11 @@ gitbuddy debug "性能问题" -l zh --interactive
 
 # Specify custom issues directory
 gitbuddy debug "Database connection timeout" --issues-dir ./debug-reports
+
+# Set maximum iterations
+gitbuddy debug "Complex issue" --max-iterations 50
+
+# In interactive mode, you'll be asked if you want to continue when max iterations is reached
 ```
 
 The debug command:

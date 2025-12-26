@@ -59,6 +59,7 @@ func DefaultReviewConfig() *ReviewConfig {
 type DebugConfig struct {
 	MaxLinesPerRead int    `yaml:"max_lines_per_read" mapstructure:"max_lines_per_read"`
 	IssuesDir       string `yaml:"issues_dir" mapstructure:"issues_dir"`
+	MaxIterations   int    `yaml:"max_iterations" mapstructure:"max_iterations"`
 	GrepMaxFileSize int    `yaml:"grep_max_file_size" mapstructure:"grep_max_file_size"` // in MB
 	GrepTimeout     int    `yaml:"grep_timeout" mapstructure:"grep_timeout"`             // in seconds
 	GrepMaxResults  int    `yaml:"grep_max_results" mapstructure:"grep_max_results"`
@@ -69,6 +70,7 @@ func DefaultDebugConfig() *DebugConfig {
 	return &DebugConfig{
 		MaxLinesPerRead: 1000,
 		IssuesDir:       "./issues",
+		MaxIterations:   30,  // 30 iterations
 		GrepMaxFileSize: 10,  // 10 MB
 		GrepTimeout:     10,  // 10 seconds
 		GrepMaxResults:  100, // 100 results
@@ -215,6 +217,9 @@ func (c *Config) GetDebugConfig() *DebugConfig {
 	}
 	if c.Debug.IssuesDir == "" {
 		c.Debug.IssuesDir = defaults.IssuesDir
+	}
+	if c.Debug.MaxIterations <= 0 {
+		c.Debug.MaxIterations = defaults.MaxIterations
 	}
 	if c.Debug.GrepMaxFileSize <= 0 {
 		c.Debug.GrepMaxFileSize = defaults.GrepMaxFileSize
