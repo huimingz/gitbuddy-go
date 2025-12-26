@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/cloudwego/eino/schema"
 
@@ -20,21 +21,26 @@ import (
 	"github.com/huimingz/gitbuddy-go/internal/ui"
 )
 
+// MessageModifier is a function that modifies messages before sending to LLM
+// This allows for dynamic message processing, filtering, or augmentation
+type MessageModifier func(messages []*schema.Message) []*schema.Message
+
 // DebugRequest contains the input for debugging
 type DebugRequest struct {
-	Issue                  string   // Issue description from user
-	Language               string   // Output language
-	Context                string   // Additional context
-	Files                  []string // Specific files to investigate
-	WorkDir                string   // Working directory
-	IssuesDir              string   // Directory to save reports
-	MaxLines               int      // Maximum lines per file read
-	MaxIterations          int      // Maximum number of agent iterations
-	Interactive            bool     // Enable interactive feedback
-	EnableCompression      bool     // Enable message history compression
-	CompressionThreshold   int      // Number of messages before compression
-	CompressionKeepRecent  int      // Number of recent messages to keep after compression
-	ShowCompressionSummary bool     // Show compression summary to user
+	Issue                  string          // Issue description from user
+	Language               string          // Output language
+	Context                string          // Additional context
+	Files                  []string        // Specific files to investigate
+	WorkDir                string          // Working directory
+	IssuesDir              string          // Directory to save reports
+	MaxLines               int             // Maximum lines per file read
+	MaxIterations          int             // Maximum number of agent iterations
+	Interactive            bool            // Enable interactive feedback
+	EnableCompression      bool            // Enable message history compression
+	CompressionThreshold   int             // Number of messages before compression
+	CompressionKeepRecent  int             // Number of recent messages to keep after compression
+	ShowCompressionSummary bool            // Show compression summary to user
+	MessageModifier        MessageModifier // Optional message modifier function
 }
 
 // DebugResponse contains the result of debugging
@@ -58,6 +64,186 @@ type DebugAgentOptions struct {
 	WorkDir         string
 	IssuesDir       string
 	MaxLinesPerRead int
+}
+
+// ExecutionPlan represents a dynamic plan for the debugging process
+type ExecutionPlan struct {
+	Tasks       []PlanTask
+	LastUpdated time.Time
+}
+
+// PlanTask represents a single task in the execution plan
+type PlanTask struct {
+	ID          string
+	Description string
+	Status      string // "pending", "in_progress", "completed", "skipped"
+	CreatedAt   time.Time
+	CompletedAt *time.Time
+}
+
+// NewExecutionPlan creates a new execution plan
+func NewExecutionPlan() *ExecutionPlan {
+	return &ExecutionPlan{
+		Tasks:       []PlanTask{},
+		LastUpdated: time.Now(),
+	}
+}
+
+// AddTask adds a new task to the plan
+func (p *ExecutionPlan) AddTask(id, description string) {
+	p.Tasks = append(p.Tasks, PlanTask{
+		ID:          id,
+		Description: description,
+		Status:      "pending",
+		CreatedAt:   time.Now(),
+	})
+	p.LastUpdated = time.Now()
+}
+
+// UpdateTask updates the status of a task
+func (p *ExecutionPlan) UpdateTask(id, status string) bool {
+	for i := range p.Tasks {
+		if p.Tasks[i].ID == id {
+			oldStatus := p.Tasks[i].Status
+			p.Tasks[i].Status = status
+			if status == "completed" || status == "skipped" {
+				now := time.Now()
+				p.Tasks[i].CompletedAt = &now
+			}
+			p.LastUpdated = time.Now()
+			return oldStatus != status
+		}
+	}
+	return false
+}
+
+// RemoveTask removes a task from the plan
+func (p *ExecutionPlan) RemoveTask(id string) bool {
+	for i, task := range p.Tasks {
+		if task.ID == id {
+			p.Tasks = append(p.Tasks[:i], p.Tasks[i+1:]...)
+			p.LastUpdated = time.Now()
+			return true
+		}
+	}
+	return false
+}
+
+// GetSummary returns a formatted summary of the plan
+func (p *ExecutionPlan) GetSummary() string {
+	if len(p.Tasks) == 0 {
+		return "No execution plan yet."
+	}
+
+	var summary strings.Builder
+	summary.WriteString("📋 Current Execution Plan:\n")
+
+	pending := 0
+	inProgress := 0
+	completed := 0
+	skipped := 0
+
+	for i, task := range p.Tasks {
+		var statusIcon string
+		switch task.Status {
+		case "pending":
+			statusIcon = "⏳"
+			pending++
+		case "in_progress":
+			statusIcon = "🔄"
+			inProgress++
+		case "completed":
+			statusIcon = "✅"
+			completed++
+		case "skipped":
+			statusIcon = "⏭️"
+			skipped++
+		default:
+			statusIcon = "❓"
+		}
+
+		summary.WriteString(fmt.Sprintf("  %d. %s %s\n", i+1, statusIcon, task.Description))
+	}
+
+	summary.WriteString(fmt.Sprintf("\nProgress: %d completed, %d in progress, %d pending", completed, inProgress, pending))
+	if skipped > 0 {
+		summary.WriteString(fmt.Sprintf(", %d skipped", skipped))
+	}
+
+	return summary.String()
+}
+
+// GetChanges compares with another plan and returns the changes
+func (p *ExecutionPlan) GetChanges(old interface{}) []string {
+	oldPlan, ok := old.(*ExecutionPlan)
+	if !ok || oldPlan == nil {
+		return []string{"Initial plan created"}
+	}
+
+	var changes []string
+
+	// Check for new tasks
+	oldTaskIDs := make(map[string]bool)
+	for _, task := range oldPlan.Tasks {
+		oldTaskIDs[task.ID] = true
+	}
+
+	for _, task := range p.Tasks {
+		if !oldTaskIDs[task.ID] {
+			changes = append(changes, fmt.Sprintf("➕ Added: %s", task.Description))
+		}
+	}
+
+	// Check for removed tasks
+	newTaskMap := make(map[string]PlanTask)
+	for _, task := range p.Tasks {
+		newTaskMap[task.ID] = task
+	}
+
+	for _, oldTask := range oldPlan.Tasks {
+		if _, exists := newTaskMap[oldTask.ID]; !exists {
+			changes = append(changes, fmt.Sprintf("➖ Removed: %s", oldTask.Description))
+		}
+	}
+
+	// Check for status changes
+	for _, newTask := range p.Tasks {
+		for _, oldTask := range oldPlan.Tasks {
+			if newTask.ID == oldTask.ID && newTask.Status != oldTask.Status {
+				changes = append(changes, fmt.Sprintf("🔄 Status changed: %s (%s → %s)",
+					newTask.Description, oldTask.Status, newTask.Status))
+			}
+		}
+	}
+
+	return changes
+}
+
+// Clone creates a deep copy of the execution plan
+func (p *ExecutionPlan) Clone() interface{} {
+	if p == nil {
+		return (*ExecutionPlan)(nil)
+	}
+
+	clone := &ExecutionPlan{
+		Tasks:       make([]PlanTask, len(p.Tasks)),
+		LastUpdated: p.LastUpdated,
+	}
+
+	for i, task := range p.Tasks {
+		clone.Tasks[i] = PlanTask{
+			ID:          task.ID,
+			Description: task.Description,
+			Status:      task.Status,
+			CreatedAt:   task.CreatedAt,
+		}
+		if task.CompletedAt != nil {
+			completedAt := *task.CompletedAt
+			clone.Tasks[i].CompletedAt = &completedAt
+		}
+	}
+
+	return clone
 }
 
 // DebugAgent performs code debugging using LLM
@@ -144,6 +330,13 @@ func (a *DebugAgent) Debug(ctx context.Context, req DebugRequest) (*DebugRespons
 		}
 	}
 
+	printExecutionPlan := func(plan *ExecutionPlan) {
+		if printer != nil {
+			summary := plan.GetSummary()
+			_ = printer.PrintInfo("\n" + summary + "\n")
+		}
+	}
+
 	// Create LLM chat model
 	if a.opts.LLMProvider == nil {
 		return nil, fmt.Errorf("LLM provider is not configured")
@@ -195,6 +388,10 @@ func (a *DebugAgent) Debug(ctx context.Context, req DebugRequest) (*DebugRespons
 	// Interactive and reporting tools
 	requestFeedbackTool := tools.NewRequestFeedbackTool(a.opts.Input, a.opts.Output)
 	submitReportTool := tools.NewSubmitReportTool(issuesDir)
+
+	// Execution plan tool
+	executionPlan := NewExecutionPlan()
+	updateExecutionPlanTool := tools.NewUpdateExecutionPlanTool(executionPlan)
 
 	// Define tool schemas
 	toolInfos := []*schema.ToolInfo{
@@ -302,6 +499,18 @@ func (a *DebugAgent) Debug(ctx context.Context, req DebugRequest) (*DebugRespons
 		})
 	}
 
+	// Add execution plan tool
+	toolInfos = append(toolInfos, &schema.ToolInfo{
+		Name: "update_execution_plan",
+		Desc: updateExecutionPlanTool.Description(),
+		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+			"action":      {Type: schema.String, Desc: "Action to perform: add, update, remove, or show", Required: true},
+			"task_id":     {Type: schema.String, Desc: "Unique identifier for the task (required for update/remove)", Required: false},
+			"description": {Type: schema.String, Desc: "Task description (required for add)", Required: false},
+			"status":      {Type: schema.String, Desc: "Task status: pending, in_progress, completed, or skipped (required for update)", Required: false},
+		}),
+	})
+
 	// Bind tools to chat model
 	if err := chatModel.BindTools(toolInfos); err != nil {
 		return nil, fmt.Errorf("failed to bind tools: %w", err)
@@ -339,8 +548,22 @@ func (a *DebugAgent) Debug(ctx context.Context, req DebugRequest) (*DebugRespons
 		maxIterations = 30
 	}
 
+	// Set up default message modifier if not provided
+	if req.MessageModifier == nil {
+		// Create a default modifier chain that:
+		// 1. Adds progress context to help LLM understand where it is
+		// 2. Summarizes very long tool results
+		// 3. Deduplicates consecutive identical messages
+		req.MessageModifier = MessageModifierChain(
+			SummarizeToolResults(5000), // Limit tool results to 5000 chars
+			DeduplicateMessages(),
+		)
+	}
+
 	// Agent loop
 	iterationCount := 0
+	lastPlanSnapshot := executionPlan.Clone().(*ExecutionPlan)
+
 	for {
 		iterationCount++
 
@@ -363,10 +586,29 @@ func (a *DebugAgent) Debug(ctx context.Context, req DebugRequest) (*DebugRespons
 			}
 		}
 
+		// Display execution plan at the start of each iteration (every 3 iterations or when changed)
+		if iterationCount == 1 || iterationCount%3 == 0 {
+			changes := executionPlan.GetChanges(lastPlanSnapshot)
+			if len(changes) > 0 || iterationCount == 1 {
+				printExecutionPlan(executionPlan)
+				lastPlanSnapshot = executionPlan.Clone().(*ExecutionPlan)
+			}
+		}
+
 		printProgress(fmt.Sprintf("Agent iteration %d...", iterationCount))
 
+		// Apply message modifier with progress context (similar to Eino's MessageModifier)
+		messagesToSend := messages
+		if req.MessageModifier != nil {
+			// Add progress context before applying user's modifier
+			progressModifier := CreateProgressContextModifier(executionPlan, iterationCount, maxIterations)
+			combinedModifier := MessageModifierChain(progressModifier, req.MessageModifier)
+			messagesToSend = combinedModifier(messages)
+			log.Debug("MessageModifier applied, messages count: %d -> %d", len(messages), len(messagesToSend))
+		}
+
 		// Stream LLM response
-		streamReader, err := chatModel.Stream(ctx, messages)
+		streamReader, err := chatModel.Stream(ctx, messagesToSend)
 		if err != nil {
 			return nil, fmt.Errorf("LLM stream failed: %w", err)
 		}
@@ -581,6 +823,14 @@ func (a *DebugAgent) Debug(ctx context.Context, req DebugRequest) (*DebugRespons
 					}
 				}
 
+			case "update_execution_plan":
+				var params tools.UpdateExecutionPlanParams
+				if err := json.Unmarshal([]byte(tc.Function.Arguments), &params); err != nil {
+					toolErr = fmt.Errorf("invalid parameters: %w", err)
+				} else {
+					result, toolErr = updateExecutionPlanTool.Execute(ctx, &params)
+				}
+
 			default:
 				toolErr = fmt.Errorf("unknown tool: %s", tc.Function.Name)
 			}
@@ -601,6 +851,12 @@ func (a *DebugAgent) Debug(ctx context.Context, req DebugRequest) (*DebugRespons
 				Content:    toolResult,
 				ToolCallID: tc.ID,
 			})
+
+			// Display execution plan after each tool execution (except update_execution_plan itself)
+			if tc.Function.Name == "update_execution_plan" && toolErr == nil {
+				// Plan was updated, show the changes
+				printExecutionPlan(executionPlan)
+			}
 		}
 
 		// Compress message history if enabled and threshold is reached
@@ -784,7 +1040,7 @@ func compressMessageHistoryWithLLM(ctx context.Context, chatModel interface{}, m
 }
 
 // simpleCompressMessageHistory is a fallback that truncates old messages
-// but adds a summary message to preserve context
+// but adds a detailed summary message to preserve critical context
 // Returns: compressed messages, summary text
 func simpleCompressMessageHistory(messages []*schema.Message, keepLastN int) ([]*schema.Message, string) {
 	if len(messages) <= keepLastN+2 { // +2 for system and first user message
@@ -797,37 +1053,143 @@ func simpleCompressMessageHistory(messages []*schema.Message, keepLastN int) ([]
 	oldMessages := messages[2 : len(messages)-keepLastN]
 	recentMessages := messages[len(messages)-keepLastN:]
 
-	// Build a simple text summary of old messages
+	// Build a detailed summary preserving key information
 	var summaryBuilder strings.Builder
 	summaryBuilder.WriteString(fmt.Sprintf("[Note: %d earlier messages were compressed for context management]\n\n", len(oldMessages)))
-	summaryBuilder.WriteString("Summary of earlier investigation:\n")
+	summaryBuilder.WriteString("=== Summary of Earlier Investigation ===\n\n")
 
-	// Extract key information from old messages
-	toolCallCount := 0
-	var toolsUsed []string
-	toolUsageMap := make(map[string]int)
+	// Track tool usage and extract key findings
+	toolUsageMap := make(map[string][]string) // tool name -> list of key findings
+	var keyFindings []string
+	var filesMentioned []string
+	fileSet := make(map[string]bool)
 
-	for _, msg := range oldMessages {
+	for i, msg := range oldMessages {
+		// Extract tool calls and their results
 		if msg.Role == schema.Assistant && len(msg.ToolCalls) > 0 {
 			for _, tc := range msg.ToolCalls {
 				toolName := tc.Function.Name
-				toolUsageMap[toolName]++
-				toolCallCount++
+
+				// Extract parameters for context
+				var params map[string]interface{}
+				if err := json.Unmarshal([]byte(tc.Function.Arguments), &params); err == nil {
+					// Extract file paths from various tool parameters
+					if filePath, ok := params["file_path"].(string); ok && filePath != "" {
+						if !fileSet[filePath] {
+							filesMentioned = append(filesMentioned, filePath)
+							fileSet[filePath] = true
+						}
+					}
+					if dirPath, ok := params["directory"].(string); ok && dirPath != "" {
+						if !fileSet[dirPath] {
+							filesMentioned = append(filesMentioned, dirPath)
+							fileSet[dirPath] = true
+						}
+					}
+
+					// Create a brief description of the tool call
+					briefDesc := fmt.Sprintf("%s", toolName)
+					if pattern, ok := params["pattern"].(string); ok && pattern != "" {
+						briefDesc += fmt.Sprintf(" (pattern: %s)", pattern)
+					}
+					if question, ok := params["question"].(string); ok && question != "" {
+						briefDesc += fmt.Sprintf(" (question: %s)", truncateString(question, 50))
+					}
+
+					toolUsageMap[toolName] = append(toolUsageMap[toolName], briefDesc)
+				}
+			}
+		}
+
+		// Extract key findings from tool results (next message after assistant)
+		if msg.Role == schema.Tool && i > 0 {
+			content := msg.Content
+			// If content is too long, extract key parts
+			if len(content) > 500 {
+				// Try to extract error messages, file paths, or important lines
+				lines := strings.Split(content, "\n")
+				var importantLines []string
+				for _, line := range lines {
+					line = strings.TrimSpace(line)
+					// Keep lines that look important
+					if strings.Contains(line, "error") || strings.Contains(line, "Error") ||
+						strings.Contains(line, "failed") || strings.Contains(line, "Failed") ||
+						strings.Contains(line, ".go:") || strings.Contains(line, ".py:") ||
+						strings.HasPrefix(line, "func ") || strings.HasPrefix(line, "type ") ||
+						strings.HasPrefix(line, "class ") || strings.HasPrefix(line, "def ") {
+						importantLines = append(importantLines, line)
+						if len(importantLines) >= 5 { // Limit to 5 important lines per tool result
+							break
+						}
+					}
+				}
+				if len(importantLines) > 0 {
+					keyFindings = append(keyFindings, strings.Join(importantLines, "\n  "))
+				}
+			} else if content != "" {
+				// Keep short results as-is
+				keyFindings = append(keyFindings, truncateString(content, 200))
+			}
+		}
+
+		// Extract assistant's analysis and conclusions
+		if msg.Role == schema.Assistant && msg.Content != "" {
+			// Look for analysis patterns
+			content := msg.Content
+			if strings.Contains(content, "found") || strings.Contains(content, "discovered") ||
+				strings.Contains(content, "issue") || strings.Contains(content, "problem") ||
+				strings.Contains(content, "conclusion") || strings.Contains(content, "summary") {
+				keyFindings = append(keyFindings, truncateString(content, 200))
 			}
 		}
 	}
 
-	// List tools used
-	for tool, count := range toolUsageMap {
-		toolsUsed = append(toolsUsed, fmt.Sprintf("%s (%d times)", tool, count))
+	// Write tool usage summary
+	if len(toolUsageMap) > 0 {
+		summaryBuilder.WriteString("## Tools Used:\n")
+		totalCalls := 0
+		for tool, calls := range toolUsageMap {
+			summaryBuilder.WriteString(fmt.Sprintf("- %s: %d calls\n", tool, len(calls)))
+			totalCalls += len(calls)
+			// Show first few calls as examples
+			for i, call := range calls {
+				if i >= 3 { // Limit to 3 examples per tool
+					summaryBuilder.WriteString(fmt.Sprintf("  ... and %d more\n", len(calls)-i))
+					break
+				}
+				summaryBuilder.WriteString(fmt.Sprintf("  • %s\n", call))
+			}
+		}
+		summaryBuilder.WriteString(fmt.Sprintf("\nTotal tool calls: %d\n\n", totalCalls))
 	}
 
-	if len(toolsUsed) > 0 {
-		summaryBuilder.WriteString(fmt.Sprintf("- Tools used: %s\n", strings.Join(toolsUsed, ", ")))
-		summaryBuilder.WriteString(fmt.Sprintf("- Total tool calls: %d\n", toolCallCount))
+	// Write files investigated
+	if len(filesMentioned) > 0 {
+		summaryBuilder.WriteString("## Files/Directories Investigated:\n")
+		for i, file := range filesMentioned {
+			if i >= 10 { // Limit to 10 files
+				summaryBuilder.WriteString(fmt.Sprintf("... and %d more\n", len(filesMentioned)-i))
+				break
+			}
+			summaryBuilder.WriteString(fmt.Sprintf("- %s\n", file))
+		}
+		summaryBuilder.WriteString("\n")
 	}
 
-	summaryBuilder.WriteString("\nContinuing from the most recent context...\n")
+	// Write key findings
+	if len(keyFindings) > 0 {
+		summaryBuilder.WriteString("## Key Findings & Analysis:\n")
+		for i, finding := range keyFindings {
+			if i >= 8 { // Limit to 8 findings
+				summaryBuilder.WriteString(fmt.Sprintf("... and %d more findings\n", len(keyFindings)-i))
+				break
+			}
+			summaryBuilder.WriteString(fmt.Sprintf("%d. %s\n\n", i+1, finding))
+		}
+	}
+
+	summaryBuilder.WriteString("=== End of Summary ===\n")
+	summaryBuilder.WriteString("\nContinuing investigation with recent context...\n")
 
 	summaryText := summaryBuilder.String()
 
@@ -845,4 +1207,13 @@ func simpleCompressMessageHistory(messages []*schema.Message, keepLastN int) ([]
 
 	log.Debug("Simple compression: %d messages -> %d messages (kept first user message and %d recent)", len(messages), len(compressed), len(recentMessages))
 	return compressed, summaryText
+}
+
+// truncateString truncates a string to maxLen characters, adding "..." if truncated
+func truncateString(s string, maxLen int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
