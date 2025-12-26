@@ -196,6 +196,10 @@ func (a *ReviewAgent) Review(ctx context.Context, req ReviewRequest) (*ReviewRes
 	}
 	readFileTool := tools.NewReadFileTool(req.WorkDir, maxLines)
 
+	// Create grep tools
+	grepFileTool := tools.NewGrepFileTool(req.WorkDir, tools.DefaultMaxFileSize)
+	grepDirectoryTool := tools.NewGrepDirectoryTool(req.WorkDir, tools.DefaultMaxFileSize, tools.DefaultMaxResults, tools.DefaultGrepTimeout)
+
 	// Define tool schemas
 	toolInfos := []*schema.ToolInfo{
 		{
@@ -215,6 +219,33 @@ func (a *ReviewAgent) Review(ctx context.Context, req ReviewRequest) (*ReviewRes
 				"file_path":  {Type: schema.String, Desc: "Path to the file to read", Required: true},
 				"start_line": {Type: schema.Integer, Desc: "Starting line number (1-indexed)", Required: false},
 				"end_line":   {Type: schema.Integer, Desc: "Ending line number (1-indexed, inclusive)", Required: false},
+			}),
+		},
+		{
+			Name: "grep_file",
+			Desc: grepFileTool.Description(),
+			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+				"file_path":      {Type: schema.String, Desc: "Path to the file to search", Required: true},
+				"pattern":        {Type: schema.String, Desc: "Regular expression pattern to search for", Required: true},
+				"ignore_case":    {Type: schema.Boolean, Desc: "Perform case-insensitive search", Required: false},
+				"before_context": {Type: schema.Integer, Desc: "Number of lines to show before each match", Required: false},
+				"after_context":  {Type: schema.Integer, Desc: "Number of lines to show after each match", Required: false},
+				"context":        {Type: schema.Integer, Desc: "Number of lines to show before and after each match", Required: false},
+			}),
+		},
+		{
+			Name: "grep_directory",
+			Desc: grepDirectoryTool.Description(),
+			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+				"directory":      {Type: schema.String, Desc: "Path to the directory to search", Required: true},
+				"pattern":        {Type: schema.String, Desc: "Regular expression pattern to search for", Required: true},
+				"recursive":      {Type: schema.Boolean, Desc: "Search subdirectories recursively", Required: false},
+				"file_pattern":   {Type: schema.String, Desc: "Glob pattern to filter files (e.g., '*.go')", Required: false},
+				"ignore_case":    {Type: schema.Boolean, Desc: "Perform case-insensitive search", Required: false},
+				"before_context": {Type: schema.Integer, Desc: "Number of lines to show before each match", Required: false},
+				"after_context":  {Type: schema.Integer, Desc: "Number of lines to show after each match", Required: false},
+				"context":        {Type: schema.Integer, Desc: "Number of lines to show before and after each match", Required: false},
+				"max_results":    {Type: schema.Integer, Desc: "Maximum number of matches to return", Required: false},
 			}),
 		},
 		{
@@ -410,6 +441,22 @@ func (a *ReviewAgent) Review(ctx context.Context, req ReviewRequest) (*ReviewRes
 					toolErr = fmt.Errorf("invalid parameters: %w", err)
 				} else {
 					result, toolErr = readFileTool.Execute(ctx, &params)
+				}
+
+			case "grep_file":
+				var params tools.GrepFileParams
+				if err := json.Unmarshal([]byte(tc.Function.Arguments), &params); err != nil {
+					toolErr = fmt.Errorf("invalid parameters: %w", err)
+				} else {
+					result, toolErr = grepFileTool.Execute(ctx, &params)
+				}
+
+			case "grep_directory":
+				var params tools.GrepDirectoryParams
+				if err := json.Unmarshal([]byte(tc.Function.Arguments), &params); err != nil {
+					toolErr = fmt.Errorf("invalid parameters: %w", err)
+				} else {
+					result, toolErr = grepDirectoryTool.Execute(ctx, &params)
 				}
 
 			default:

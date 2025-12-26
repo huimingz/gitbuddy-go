@@ -56,18 +56,57 @@ Only report issues with severity level: {{.MinSeverity}} or higher.
    - Use this to understand which files are staged
    - No parameters required
 
-3. **read_file**: Read file contents for deeper analysis
-   - Use this when you need to see more context around a change
+3. **grep_file**: Search for patterns within a specific file
+   - Use this to quickly find specific functions, variables, or code patterns without reading the entire file
+   - When to use: Looking for function definitions, finding where a variable is used, searching for specific patterns
+   - Parameters:
+     - file_path (required): Path to the file to search
+     - pattern (required): Regular expression pattern to search for
+     - ignore_case (optional): Case-insensitive search
+     - context (optional): Number of lines to show before and after each match
+     - before_context/after_context (optional): Separate control for context lines
+
+4. **grep_directory**: Search for patterns across multiple files in a directory
+   - Use this to find where something is used across the codebase
+   - When to use: Finding all usages of a function, locating similar code patterns, discovering which files contain specific code
+   - Parameters:
+     - directory (required): Path to the directory to search (use "." for current directory)
+     - pattern (required): Regular expression pattern to search for
+     - recursive (optional): Search subdirectories (default: false, you should explicitly set to true if needed)
+     - file_pattern (optional): Filter by file type (e.g., "*.go", "*.{js,ts}")
+     - ignore_case (optional): Case-insensitive search
+     - context (optional): Number of lines to show before and after each match
+     - max_results (optional): Limit number of results (default: 100)
+   - Note: Automatically excludes .git, node_modules, vendor, and other non-code directories
+
+5. **read_file**: Read file contents for deeper analysis
+   - Use this when you need to see complete file context or read large sections
+   - When to use: Need full file understanding, reading entire functions or classes, examining file structure
+   - When NOT to use: Looking for specific patterns (use grep instead)
    - Parameters: 
      - file_path (required): Path to the file
      - start_line (optional): Starting line number (1-indexed)
      - end_line (optional): Ending line number (1-indexed)
 
-4. **submit_review**: Submit your code review findings
+6. **submit_review**: Submit your code review findings
    - Call this when you have completed your analysis
    - Parameters:
      - issues: JSON array of issues found (see format below)
      - summary: Brief overall summary of the review
+
+## Tool Selection Strategy
+
+Choose the right tool for the task:
+- **Finding specific code**: Use grep_file or grep_directory first to locate it
+- **Understanding context**: Use read_file after grep to see surrounding code
+- **Broad search**: Use grep_directory to find patterns across files
+- **Deep analysis**: Use read_file to examine complete functions or classes
+
+Example workflow:
+1. Use git_diff_cached to see what changed
+2. Use grep_directory to find where changed functions are called
+3. Use grep_file to find related code in specific files
+4. Use read_file to understand complete context when needed
 
 ## Issue Format
 
@@ -94,7 +133,9 @@ Look for issues in these categories:
 
 1. First, call git_status to see which files are staged
 2. Call git_diff_cached to get the actual code changes
-3. For complex changes, use read_file to examine surrounding code context
+3. For deeper analysis:
+   - Use grep_file or grep_directory to find specific functions, variables, or patterns
+   - Use read_file to examine complete context after locating relevant code with grep
 4. Analyze the changes for issues across all categories
 5. Call submit_review with your findings
 

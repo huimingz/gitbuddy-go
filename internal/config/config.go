@@ -39,12 +39,18 @@ type Config struct {
 // ReviewConfig represents the review command configuration
 type ReviewConfig struct {
 	MaxLinesPerRead int `yaml:"max_lines_per_read" mapstructure:"max_lines_per_read"`
+	GrepMaxFileSize int `yaml:"grep_max_file_size" mapstructure:"grep_max_file_size"` // in MB
+	GrepTimeout     int `yaml:"grep_timeout" mapstructure:"grep_timeout"`             // in seconds
+	GrepMaxResults  int `yaml:"grep_max_results" mapstructure:"grep_max_results"`
 }
 
 // DefaultReviewConfig returns the default review configuration
 func DefaultReviewConfig() *ReviewConfig {
 	return &ReviewConfig{
 		MaxLinesPerRead: 1000,
+		GrepMaxFileSize: 10,  // 10 MB
+		GrepTimeout:     10,  // 10 seconds
+		GrepMaxResults:  100, // 100 results
 	}
 }
 
@@ -160,8 +166,18 @@ func (c *Config) GetReviewConfig() *ReviewConfig {
 		return DefaultReviewConfig()
 	}
 	// Apply defaults for unset values
+	defaults := DefaultReviewConfig()
 	if c.Review.MaxLinesPerRead <= 0 {
-		c.Review.MaxLinesPerRead = 1000
+		c.Review.MaxLinesPerRead = defaults.MaxLinesPerRead
+	}
+	if c.Review.GrepMaxFileSize <= 0 {
+		c.Review.GrepMaxFileSize = defaults.GrepMaxFileSize
+	}
+	if c.Review.GrepTimeout <= 0 {
+		c.Review.GrepTimeout = defaults.GrepTimeout
+	}
+	if c.Review.GrepMaxResults <= 0 {
+		c.Review.GrepMaxResults = defaults.GrepMaxResults
 	}
 	return c.Review
 }
