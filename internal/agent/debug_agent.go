@@ -22,15 +22,18 @@ import (
 
 // DebugRequest contains the input for debugging
 type DebugRequest struct {
-	Issue         string   // Issue description from user
-	Language      string   // Output language
-	Context       string   // Additional context
-	Files         []string // Specific files to investigate
-	WorkDir       string   // Working directory
-	IssuesDir     string   // Directory to save reports
-	MaxLines      int      // Maximum lines per file read
-	MaxIterations int      // Maximum number of agent iterations
-	Interactive   bool     // Enable interactive feedback
+	Issue                 string   // Issue description from user
+	Language              string   // Output language
+	Context               string   // Additional context
+	Files                 []string // Specific files to investigate
+	WorkDir               string   // Working directory
+	IssuesDir             string   // Directory to save reports
+	MaxLines              int      // Maximum lines per file read
+	MaxIterations         int      // Maximum number of agent iterations
+	Interactive           bool     // Enable interactive feedback
+	EnableCompression     bool     // Enable message history compression
+	CompressionThreshold  int      // Number of messages before compression
+	CompressionKeepRecent int      // Number of recent messages to keep after compression
 }
 
 // DebugResponse contains the result of debugging
@@ -599,18 +602,17 @@ func (a *DebugAgent) Debug(ctx context.Context, req DebugRequest) (*DebugRespons
 			})
 		}
 
-		// Compress message history if it gets too long
-		// Use LLM to intelligently summarize old messages while keeping recent ones
-		if len(messages) > 20 {
-			compressedMessages, err := compressMessageHistoryWithLLM(ctx, chatModel, messages, 10)
+		// Compress message history if enabled and threshold is reached
+		if req.EnableCompression && len(messages) > req.CompressionThreshold {
+			compressedMessages, err := compressMessageHistoryWithLLM(ctx, chatModel, messages, req.CompressionKeepRecent)
 			if err != nil {
-				log.Debug("Failed to compress message history: %v", err)
-				// Fallback to simple truncation if compression fails
-				messages = simpleCompressMessageHistory(messages, 10)
+				log.Debug("Failed to compress message history with LLM: %v", err)
+				// Fallback to simple compression if LLM compression fails
+				messages = simpleCompressMessageHistory(messages, req.CompressionKeepRecent)
 			} else {
 				messages = compressedMessages
 			}
-			printProgress("Message history compressed to manage context size")
+			printProgress(fmt.Sprintf("Message history compressed (%d -> %d messages)", len(messages), len(compressedMessages)))
 		}
 	}
 
@@ -769,22 +771,60 @@ func compressMessageHistoryWithLLM(ctx context.Context, chatModel interface{}, m
 	return compressed, nil
 }
 
-// simpleCompressMessageHistory is a fallback that simply truncates old messages
-// Used when LLM-based compression fails
+// simpleCompressMessageHistory is a fallback that truncates old messages
+// but adds a summary message to preserve context
 func simpleCompressMessageHistory(messages []*schema.Message, keepLastN int) []*schema.Message {
 	if len(messages) <= keepLastN+1 {
 		return messages
 	}
 
-	// Always keep system message (first message)
-	compressed := []*schema.Message{messages[0]}
+	// Structure: [system, ...old messages..., ...recent messages...]
+	systemMsg := messages[0]
+	oldMessages := messages[1 : len(messages)-keepLastN]
+	recentMessages := messages[len(messages)-keepLastN:]
 
-	// Keep the last N messages
-	startIdx := len(messages) - keepLastN
-	if startIdx < 1 {
-		startIdx = 1
+	// Build a simple text summary of old messages
+	var summaryBuilder strings.Builder
+	summaryBuilder.WriteString(fmt.Sprintf("[Note: %d earlier messages were compressed for context management]\n\n", len(oldMessages)))
+	summaryBuilder.WriteString("Summary of earlier investigation:\n")
+
+	// Extract key information from old messages
+	toolCallCount := 0
+	var toolsUsed []string
+	toolUsageMap := make(map[string]int)
+
+	for _, msg := range oldMessages {
+		if msg.Role == schema.Assistant && len(msg.ToolCalls) > 0 {
+			for _, tc := range msg.ToolCalls {
+				toolName := tc.Function.Name
+				toolUsageMap[toolName]++
+				toolCallCount++
+			}
+		}
 	}
 
-	compressed = append(compressed, messages[startIdx:]...)
+	// List tools used
+	for tool, count := range toolUsageMap {
+		toolsUsed = append(toolsUsed, fmt.Sprintf("%s (%d times)", tool, count))
+	}
+
+	if len(toolsUsed) > 0 {
+		summaryBuilder.WriteString(fmt.Sprintf("- Tools used: %s\n", strings.Join(toolsUsed, ", ")))
+		summaryBuilder.WriteString(fmt.Sprintf("- Total tool calls: %d\n", toolCallCount))
+	}
+
+	summaryBuilder.WriteString("\nContinuing from the most recent context...\n")
+
+	// Build compressed message history
+	compressed := []*schema.Message{
+		systemMsg,
+		{
+			Role:    schema.User,
+			Content: summaryBuilder.String(),
+		},
+	}
+	compressed = append(compressed, recentMessages...)
+
+	log.Debug("Simple compression: %d messages -> %d messages (kept %d recent)", len(messages), len(compressed), len(recentMessages))
 	return compressed
 }

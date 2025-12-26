@@ -139,6 +139,9 @@ review:
 debug:
   issues_dir: ./issues          # 保存调试报告的目录
   max_iterations: 30            # Agent 最大迭代次数（达到后询问是否继续）
+  enable_compression: true      # 启用消息历史压缩
+  compression_threshold: 20     # 消息数超过此值时触发压缩
+  compression_keep_recent: 10   # 压缩后保留的最近消息数
   max_lines_per_read: 1000      # 每次文件操作最多读取的行数
   grep_max_file_size: 10        # grep 最大文件大小（MB）
   grep_timeout: 10              # grep 操作超时时间（秒）
