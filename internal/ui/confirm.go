@@ -392,3 +392,73 @@ func getIntField(v reflect.Value, name string) int {
 	}
 	return 0
 }
+
+// SelectOption presents a list of options to the user and returns the selected index
+// Returns the 0-based index of the selected option
+func SelectOption(message string, options []string, defaultIndex int, input io.Reader, output io.Writer) (int, error) {
+	if len(options) == 0 {
+		return -1, fmt.Errorf("no options provided")
+	}
+
+	if defaultIndex < 0 || defaultIndex >= len(options) {
+		defaultIndex = 0
+	}
+
+	scanner := bufio.NewScanner(input)
+	bold := color.New(color.Bold)
+	cyan := color.New(color.FgCyan)
+	dim := color.New(color.FgHiBlack)
+
+	for {
+		// Print the message
+		_, err := bold.Fprintln(output, message)
+		if err != nil {
+			return -1, err
+		}
+
+		// Print the options
+		for i, option := range options {
+			if i == defaultIndex {
+				_, err = cyan.Fprintf(output, "  %d) %s [default]\n", i+1, option)
+			} else {
+				_, err = fmt.Fprintf(output, "  %d) %s\n", i+1, option)
+			}
+			if err != nil {
+				return -1, err
+			}
+		}
+
+		// Print the prompt
+		_, err = dim.Fprintf(output, "Enter your choice (1-%d) [%d]: ", len(options), defaultIndex+1)
+		if err != nil {
+			return -1, err
+		}
+
+		if !scanner.Scan() {
+			if err := scanner.Err(); err != nil {
+				return -1, err
+			}
+			return -1, io.EOF
+		}
+
+		response := strings.TrimSpace(scanner.Text())
+
+		// Handle empty input (use default)
+		if response == "" {
+			return defaultIndex, nil
+		}
+
+		// Parse the input
+		var choice int
+		_, err = fmt.Sscanf(response, "%d", &choice)
+		if err != nil || choice < 1 || choice > len(options) {
+			_, err = color.New(color.FgRed).Fprintf(output, "Invalid choice. Please enter a number between 1 and %d\n\n", len(options))
+			if err != nil {
+				return -1, err
+			}
+			continue
+		}
+
+		return choice - 1, nil
+	}
+}

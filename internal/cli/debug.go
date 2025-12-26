@@ -1,0 +1,193 @@
+package cli
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/huimingz/gitbuddy-go/internal/agent"
+	"github.com/huimingz/gitbuddy-go/internal/config"
+	"github.com/huimingz/gitbuddy-go/internal/git"
+	"github.com/huimingz/gitbuddy-go/internal/llm"
+	"github.com/huimingz/gitbuddy-go/internal/log"
+	"github.com/huimingz/gitbuddy-go/internal/ui"
+	"github.com/spf13/cobra"
+)
+
+var (
+	debugContext     string
+	debugLanguage    string
+	debugFiles       string
+	debugInteractive bool
+	debugIssuesDir   string
+)
+
+var debugCmd = &cobra.Command{
+	Use:   "debug <issue-description>",
+	Short: "Debug code issues with AI assistance",
+	Long: `Debug code issues with AI assistance through systematic analysis.
+
+This command will:
+1. Analyze the issue description you provide
+2. Explore the codebase using various tools
+3. Identify root causes and potential fixes
+4. Generate a detailed debugging report
+
+The AI agent has access to:
+- File system tools (list_directory, list_files, read_file)
+- Search tools (grep_file, grep_directory)
+- Git tools (git_status, git_diff_cached, git_log, git_show)
+- Interactive feedback (with --interactive flag)
+
+Examples:
+  gitbuddy debug "Login fails with 500 error"
+  gitbuddy debug "Memory leak in background worker" -c "Happens after 24h"
+  gitbuddy debug "Test TestUserAuth is failing" --files "auth_test.go,auth.go"
+  gitbuddy debug "API returns wrong data" --interactive
+  gitbuddy debug "Performance issue" -l zh --interactive`,
+	Args: cobra.ExactArgs(1),
+	RunE: runDebug,
+}
+
+func init() {
+	debugCmd.Flags().StringVarP(&debugContext, "context", "c", "", "Additional context to help AI understand the issue")
+	debugCmd.Flags().StringVarP(&debugLanguage, "language", "l", "", "Output language (en, zh, ja, etc.)")
+	debugCmd.Flags().StringVar(&debugFiles, "files", "", "Comma-separated list of files to focus on")
+	debugCmd.Flags().BoolVarP(&debugInteractive, "interactive", "i", false, "Enable interactive mode (agent can ask for your input)")
+	debugCmd.Flags().StringVar(&debugIssuesDir, "issues-dir", "./issues", "Directory to save debug reports")
+
+	rootCmd.AddCommand(debugCmd)
+}
+
+func runDebug(cmd *cobra.Command, args []string) error {
+	ctx := context.Background()
+	startTime := time.Now()
+
+	issue := args[0]
+	if issue == "" {
+		return fmt.Errorf("issue description cannot be empty")
+	}
+
+	// Load configuration
+	cfg, err := config.Load(configFile)
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	log.DebugConfig("Configuration", cfg)
+
+	// Get model configuration
+	modelConfig, err := cfg.GetModel(modelName)
+	if err != nil {
+		return fmt.Errorf("failed to get model config: %w", err)
+	}
+
+	log.Debug("Using model: %s (provider: %s)", modelName, modelConfig.Provider)
+
+	// Get language
+	language := cfg.GetLanguage(debugLanguage)
+	log.Debug("Using language: %s", language)
+
+	// Get debug config
+	debugCfg := cfg.GetDebugConfig()
+	log.Debug("Max lines per read: %d", debugCfg.MaxLinesPerRead)
+	log.Debug("Issues directory: %s", debugCfg.IssuesDir)
+
+	// Override issues dir if specified
+	issuesDir := debugIssuesDir
+	if issuesDir == "./issues" && debugCfg.IssuesDir != "" {
+		issuesDir = debugCfg.IssuesDir
+	}
+
+	// Create LLM provider
+	factory := llm.NewProviderFactory()
+	provider, err := factory.Create(*modelConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create LLM provider: %w", err)
+	}
+
+	log.Debug("LLM provider created successfully")
+
+	// Get current working directory
+	workDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get current directory: %w", err)
+	}
+
+	// Create git executor
+	gitExecutor := git.NewExecutor(workDir)
+
+	// Parse files list
+	var files []string
+	if debugFiles != "" {
+		files = strings.Split(debugFiles, ",")
+		for i := range files {
+			files[i] = strings.TrimSpace(files[i])
+		}
+	}
+
+	// Create stream printer for output
+	printer := ui.NewStreamPrinter(os.Stdout, ui.WithVerbose(debugMode))
+
+	// Create debug agent
+	debugAgent := agent.NewDebugAgent(agent.DebugAgentOptions{
+		Language:        language,
+		GitExecutor:     gitExecutor,
+		LLMProvider:     provider,
+		Printer:         printer,
+		Output:          os.Stdout,
+		Input:           os.Stdin,
+		Debug:           debugMode,
+		WorkDir:         workDir,
+		IssuesDir:       issuesDir,
+		MaxLinesPerRead: debugCfg.MaxLinesPerRead,
+	})
+
+	// Print initial indicator
+	_ = printer.PrintThinking("Starting debugging session...")
+
+	// Perform debugging
+	req := agent.DebugRequest{
+		Issue:       issue,
+		Language:    language,
+		Context:     debugContext,
+		Files:       files,
+		WorkDir:     workDir,
+		IssuesDir:   issuesDir,
+		MaxLines:    debugCfg.MaxLinesPerRead,
+		Interactive: debugInteractive,
+	}
+
+	response, err := debugAgent.Debug(ctx, req)
+	if err != nil {
+		return fmt.Errorf("failed to debug issue: %w", err)
+	}
+
+	// Print the debug report
+	fmt.Println("\n" + strings.Repeat("=", 80))
+	fmt.Println("📋 Debug Report")
+	fmt.Println(strings.Repeat("=", 80))
+	fmt.Println()
+	fmt.Println(response.Report)
+	fmt.Println()
+
+	if response.FilePath != "" {
+		fmt.Printf("✓ Report saved to: %s\n", response.FilePath)
+		fmt.Println()
+	}
+
+	// Print stats
+	endTime := time.Now()
+	stats := &ui.ExecutionStats{
+		StartTime:        startTime,
+		EndTime:          endTime,
+		PromptTokens:     response.PromptTokens,
+		CompletionTokens: response.CompletionTokens,
+		TotalTokens:      response.TotalTokens,
+	}
+	_ = printer.PrintStats(stats)
+
+	return nil
+}

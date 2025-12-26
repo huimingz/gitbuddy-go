@@ -28,6 +28,7 @@ GitBuddy-Go is an AI-powered command-line tool that automates and enhances your 
 - **🎯 Smart Commit Messages**: Automatically generates [Conventional Commits](https://www.conventionalcommits.org/) compliant messages by analyzing staged changes
 - **📝 PR Description Generator**: Creates comprehensive pull request descriptions with summary, changes, motivation, and impact analysis
 - **🔍 Code Review**: AI-powered code review that identifies bugs, security issues, performance problems, and style suggestions
+- **🐛 Issue Debugging**: Interactive AI assistant that systematically analyzes and debugs code issues
 - **📊 Development Reports**: Generates structured weekly/monthly development reports from commit history
 - **🌍 Multi-Language Support**: Generate output in any language (English, Chinese, Japanese, etc.)
 - **🔧 Multiple LLM Providers**: Supports OpenAI, DeepSeek, Ollama, Grok, and Google Gemini
@@ -133,6 +134,14 @@ review:
   grep_max_file_size: 10        # Maximum file size for grep in MB
   grep_timeout: 10              # Grep operation timeout in seconds
   grep_max_results: 100         # Maximum number of grep results
+
+# Debug settings (optional)
+debug:
+  issues_dir: ./issues          # Directory to save debug reports
+  max_lines_per_read: 1000      # Maximum lines to read per file operation
+  grep_max_file_size: 10        # Maximum file size for grep in MB
+  grep_timeout: 10              # Grep operation timeout in seconds
+  grep_max_results: 100         # Maximum number of grep results
 ```
 
 ### Configuration Priority
@@ -215,6 +224,35 @@ The review command identifies:
 - 🔴 **Errors**: Bugs, crashes, critical issues
 - 🟡 **Warnings**: Potential bugs, performance issues
 - 🔵 **Info**: Style suggestions, refactoring opportunities
+
+### Debug Issues
+
+```bash
+# Debug a specific issue with AI assistance
+gitbuddy debug "Login fails with 500 error"
+
+# Provide additional context
+gitbuddy debug "Memory leak in background worker" -c "Happens after 24 hours of runtime"
+
+# Focus on specific files
+gitbuddy debug "Test TestUserAuth is failing" --files "auth_test.go,auth.go"
+
+# Enable interactive mode (agent can ask for your input)
+gitbuddy debug "API returns wrong data" --interactive
+
+# Debug in Chinese with interactive mode
+gitbuddy debug "性能问题" -l zh --interactive
+
+# Specify custom issues directory
+gitbuddy debug "Database connection timeout" --issues-dir ./debug-reports
+```
+
+The debug command:
+- 🔍 **Systematically analyzes** the issue using file system, search, and Git tools
+- 🤖 **Autonomously explores** the codebase to understand the problem
+- 💬 **Interactively asks** for your input when needed (with `--interactive` flag)
+- 📋 **Generates detailed reports** with root cause analysis and fix suggestions
+- 💾 **Saves reports** to the `./issues` directory for future reference
 
 ### Other Commands
 

@@ -28,6 +28,7 @@ GitBuddy-Go 是一个 AI 驱动的命令行工具，用于自动化和增强日�
 - **🎯 智能 Commit 信息**: 自动分析暂存区变更，生成符合 [Conventional Commits](https://www.conventionalcommits.org/) 规范的提交信息
 - **📝 PR 描述生成器**: 创建包含摘要、变更内容、动机和影响分析的完整 PR 描述
 - **🔍 代码审查**: AI 驱动的代码审查，识别 bugs、安全隐患、性能问题和代码风格建议
+- **🐛 问题排查**: 交互式 AI 助手，系统化地分析和调试代码问题
 - **📊 开发报告**: 根据提交历史生成结构化的周报/月报
 - **🌍 多语言支持**: 支持任意语言输出（中文、英文、日文等）
 - **🔧 多 LLM 支持**: 支持 OpenAI、DeepSeek、Ollama、Grok 和 Google Gemini
@@ -133,6 +134,14 @@ review:
   grep_max_file_size: 10        # grep 最大文件大小（MB）
   grep_timeout: 10              # grep 操作超时时间（秒）
   grep_max_results: 100         # grep 最大结果数量
+
+# 问题排查设置（可选）
+debug:
+  issues_dir: ./issues          # 保存调试报告的目录
+  max_lines_per_read: 1000      # 每次文件操作最多读取的行数
+  grep_max_file_size: 10        # grep 最大文件大小（MB）
+  grep_timeout: 10              # grep 操作超时时间（秒）
+  grep_max_results: 100         # grep 最大结果数量
 ```
 
 ### 配置优先级
@@ -215,6 +224,35 @@ gitbuddy review -l zh
 - 🔴 **错误**: bugs、崩溃、关键问题
 - 🟡 **警告**: 潜在 bugs、性能问题
 - 🔵 **建议**: 代码风格、重构建议
+
+### 问题排查
+
+```bash
+# 使用 AI 辅助排查特定问题
+gitbuddy debug "登录时返回 500 错误"
+
+# 提供额外上下文
+gitbuddy debug "后台任务内存泄漏" -c "运行 24 小时后出现"
+
+# 重点关注特定文件
+gitbuddy debug "测试 TestUserAuth 失败" --files "auth_test.go,auth.go"
+
+# 启用交互式模式（Agent 可以询问你的意见）
+gitbuddy debug "API 返回错误数据" --interactive
+
+# 使用中文进行交互式排查
+gitbuddy debug "性能问题" -l zh --interactive
+
+# 指定自定义报告保存目录
+gitbuddy debug "数据库连接超时" --issues-dir ./debug-reports
+```
+
+问题排查功能：
+- 🔍 **系统化分析**: 使用文件系统、搜索和 Git 工具系统化分析问题
+- 🤖 **自主探索**: 自主探索代码库以理解问题
+- 💬 **交互式询问**: 在需要时询问你的意见（使用 `--interactive` 标志）
+- 📋 **生成详细报告**: 生成包含根本原因分析和修复建议的详细报告
+- 💾 **保存报告**: 将报告保存到 `./issues` 目录以供将来参考
 
 ### 其他命令
 

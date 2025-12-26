@@ -34,6 +34,7 @@ type Config struct {
 	Language     string                 `yaml:"language" mapstructure:"language"`
 	PRTemplate   *PRTemplateConfig      `yaml:"pr_template" mapstructure:"pr_template"`
 	Review       *ReviewConfig          `yaml:"review" mapstructure:"review"`
+	Debug        *DebugConfig           `yaml:"debug" mapstructure:"debug"`
 }
 
 // ReviewConfig represents the review command configuration
@@ -48,6 +49,26 @@ type ReviewConfig struct {
 func DefaultReviewConfig() *ReviewConfig {
 	return &ReviewConfig{
 		MaxLinesPerRead: 1000,
+		GrepMaxFileSize: 10,  // 10 MB
+		GrepTimeout:     10,  // 10 seconds
+		GrepMaxResults:  100, // 100 results
+	}
+}
+
+// DebugConfig represents the debug command configuration
+type DebugConfig struct {
+	MaxLinesPerRead int    `yaml:"max_lines_per_read" mapstructure:"max_lines_per_read"`
+	IssuesDir       string `yaml:"issues_dir" mapstructure:"issues_dir"`
+	GrepMaxFileSize int    `yaml:"grep_max_file_size" mapstructure:"grep_max_file_size"` // in MB
+	GrepTimeout     int    `yaml:"grep_timeout" mapstructure:"grep_timeout"`             // in seconds
+	GrepMaxResults  int    `yaml:"grep_max_results" mapstructure:"grep_max_results"`
+}
+
+// DefaultDebugConfig returns the default debug configuration
+func DefaultDebugConfig() *DebugConfig {
+	return &DebugConfig{
+		MaxLinesPerRead: 1000,
+		IssuesDir:       "./issues",
 		GrepMaxFileSize: 10,  // 10 MB
 		GrepTimeout:     10,  // 10 seconds
 		GrepMaxResults:  100, // 100 results
@@ -180,6 +201,31 @@ func (c *Config) GetReviewConfig() *ReviewConfig {
 		c.Review.GrepMaxResults = defaults.GrepMaxResults
 	}
 	return c.Review
+}
+
+// GetDebugConfig returns the debug configuration with defaults applied
+func (c *Config) GetDebugConfig() *DebugConfig {
+	if c.Debug == nil {
+		return DefaultDebugConfig()
+	}
+	// Apply defaults for unset values
+	defaults := DefaultDebugConfig()
+	if c.Debug.MaxLinesPerRead <= 0 {
+		c.Debug.MaxLinesPerRead = defaults.MaxLinesPerRead
+	}
+	if c.Debug.IssuesDir == "" {
+		c.Debug.IssuesDir = defaults.IssuesDir
+	}
+	if c.Debug.GrepMaxFileSize <= 0 {
+		c.Debug.GrepMaxFileSize = defaults.GrepMaxFileSize
+	}
+	if c.Debug.GrepTimeout <= 0 {
+		c.Debug.GrepTimeout = defaults.GrepTimeout
+	}
+	if c.Debug.GrepMaxResults <= 0 {
+		c.Debug.GrepMaxResults = defaults.GrepMaxResults
+	}
+	return c.Debug
 }
 
 // GetPRTemplate returns the PR template content
