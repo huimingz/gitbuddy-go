@@ -14,6 +14,7 @@ import (
 
 	"github.com/cloudwego/eino/schema"
 
+	"github.com/huimingz/gitbuddy-go/internal/agent/session"
 	"github.com/huimingz/gitbuddy-go/internal/agent/tools"
 	"github.com/huimingz/gitbuddy-go/internal/git"
 	"github.com/huimingz/gitbuddy-go/internal/llm"
@@ -27,26 +28,28 @@ type MessageModifier func(messages []*schema.Message) []*schema.Message
 
 // DebugRequest contains the input for debugging
 type DebugRequest struct {
-	Issue                  string          // Issue description from user
-	Language               string          // Output language
-	Context                string          // Additional context
-	Files                  []string        // Specific files to investigate
-	WorkDir                string          // Working directory
-	IssuesDir              string          // Directory to save reports
-	MaxLines               int             // Maximum lines per file read
-	MaxIterations          int             // Maximum number of agent iterations
-	Interactive            bool            // Enable interactive feedback
-	EnableCompression      bool            // Enable message history compression
-	CompressionThreshold   int             // Number of messages before compression
-	CompressionKeepRecent  int             // Number of recent messages to keep after compression
-	ShowCompressionSummary bool            // Show compression summary to user
-	MessageModifier        MessageModifier // Optional message modifier function
+	Issue                  string           // Issue description from user
+	Language               string           // Output language
+	Context                string           // Additional context
+	Files                  []string         // Specific files to investigate
+	WorkDir                string           // Working directory
+	IssuesDir              string           // Directory to save reports
+	MaxLines               int              // Maximum lines per file read
+	MaxIterations          int              // Maximum number of agent iterations
+	Interactive            bool             // Enable interactive feedback
+	EnableCompression      bool             // Enable message history compression
+	CompressionThreshold   int              // Number of messages before compression
+	CompressionKeepRecent  int              // Number of recent messages to keep after compression
+	ShowCompressionSummary bool             // Show compression summary to user
+	MessageModifier        MessageModifier  // Optional message modifier function
+	Session                *session.Session // Optional session to resume from
 }
 
 // DebugResponse contains the result of debugging
 type DebugResponse struct {
 	Report           string
 	FilePath         string // Path to saved report file
+	SessionID        string // Session ID for resuming
 	PromptTokens     int
 	CompletionTokens int
 	TotalTokens      int
@@ -64,6 +67,7 @@ type DebugAgentOptions struct {
 	WorkDir         string
 	IssuesDir       string
 	MaxLinesPerRead int
+	RetryConfig     llm.RetryConfig
 }
 
 // DebugPhase represents the current phase of the debugging process
@@ -702,8 +706,10 @@ func (a *DebugAgent) Debug(ctx context.Context, req DebugRequest) (*DebugRespons
 			log.Debug("MessageModifier applied, messages count: %d -> %d", len(messages), len(messagesToSend))
 		}
 
-		// Stream LLM response
-		streamReader, err := chatModel.Stream(ctx, messagesToSend)
+		// Stream LLM response with retry
+		streamReader, err := llm.WithRetryResult(ctx, a.opts.RetryConfig, func() (*schema.StreamReader[*schema.Message], error) {
+			return chatModel.Stream(ctx, messagesToSend)
+		})
 		if err != nil {
 			return nil, fmt.Errorf("LLM stream failed: %w", err)
 		}

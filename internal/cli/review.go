@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/huimingz/gitbuddy-go/internal/agent"
+	"github.com/huimingz/gitbuddy-go/internal/agent/session"
 	"github.com/huimingz/gitbuddy-go/internal/config"
 	"github.com/huimingz/gitbuddy-go/internal/git"
 	"github.com/huimingz/gitbuddy-go/internal/llm"
@@ -22,6 +25,7 @@ var (
 	reviewFiles    string
 	reviewSeverity string
 	reviewFocus    string
+	reviewResume   string
 )
 
 var reviewCmd = &cobra.Command{
@@ -50,6 +54,7 @@ func init() {
 	reviewCmd.Flags().StringVar(&reviewFiles, "files", "", "Comma-separated list of files to review (default: all staged files)")
 	reviewCmd.Flags().StringVar(&reviewSeverity, "severity", "", "Minimum severity level to report (error, warning, info)")
 	reviewCmd.Flags().StringVar(&reviewFocus, "focus", "", "Comma-separated focus areas (security, performance, style)")
+	reviewCmd.Flags().StringVar(&reviewResume, "resume", "", "Resume from a previous session (session ID)")
 
 	rootCmd.AddCommand(reviewCmd)
 }
@@ -144,6 +149,21 @@ func runReview(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Get retry and session config
+	retryConfigPtr := cfg.GetRetryConfig()
+	sessionConfig := cfg.GetSessionConfig()
+
+	// Convert config.RetryConfig to llm.RetryConfig
+	retryConfig := llm.RetryConfig{
+		Enabled:     retryConfigPtr.Enabled,
+		MaxAttempts: retryConfigPtr.MaxAttempts,
+		BackoffBase: retryConfigPtr.BackoffBase,
+		BackoffMax:  retryConfigPtr.BackoffMax,
+	}
+
+	// Create session manager
+	sessionMgr := session.NewManager(sessionConfig.SaveDir)
+
 	// Create stream printer for output
 	printer := ui.NewStreamPrinter(os.Stdout, ui.WithVerbose(debugMode))
 
@@ -156,10 +176,51 @@ func runReview(cmd *cobra.Command, args []string) error {
 		Debug:           debugMode,
 		WorkDir:         workDir,
 		MaxLinesPerRead: reviewCfg.MaxLinesPerRead,
+		RetryConfig:     retryConfig,
 	})
 
-	// Print initial indicator
-	_ = printer.PrintThinking("Starting code review...")
+	// Setup context with cancellation for Ctrl+C handling
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Setup signal handling for Ctrl+C
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	var currentSessionID string
+	go func() {
+		<-sigChan
+		fmt.Println("\n\n⚠️  Received interrupt signal. Saving session...")
+		cancel()
+
+		// Give some time for graceful shutdown
+		time.Sleep(500 * time.Millisecond)
+
+		if currentSessionID != "" && sessionConfig.AutoSave {
+			fmt.Printf("✓ Session saved: %s\n", currentSessionID)
+			fmt.Printf("  Resume with: gitbuddy review --resume %s\n", currentSessionID)
+		}
+		os.Exit(130) // Standard exit code for SIGINT
+	}()
+
+	// Check if resuming from a previous session
+	var sess *session.Session
+	if reviewResume != "" {
+		_ = printer.PrintInfo(fmt.Sprintf("Resuming session: %s", reviewResume))
+
+		loadedSession, err := sessionMgr.Load(reviewResume)
+		if err != nil {
+			return fmt.Errorf("failed to load session: %w", err)
+		}
+
+		sess = loadedSession
+		currentSessionID = sess.ID
+
+		_ = printer.PrintSuccess(fmt.Sprintf("Session loaded (iterations: %d/%d)", sess.IterationCount, sess.MaxIterations))
+	} else {
+		// Print initial indicator
+		_ = printer.PrintThinking("Starting code review...")
+	}
 
 	// Perform review
 	req := agent.ReviewRequest{
@@ -170,10 +231,26 @@ func runReview(cmd *cobra.Command, args []string) error {
 		Focus:    focus,
 		WorkDir:  workDir,
 		MaxLines: reviewCfg.MaxLinesPerRead,
+		Session:  sess,
 	}
 
 	response, err := reviewAgent.Review(ctx, req)
+
+	// Save session on success or interruption
+	if response != nil && response.SessionID != "" {
+		currentSessionID = response.SessionID
+
+		if sessionConfig.AutoSave {
+			// Session should be saved by the agent itself
+			_ = printer.PrintInfo(fmt.Sprintf("Session ID: %s", response.SessionID))
+		}
+	}
+
 	if err != nil {
+		if ctx.Err() == context.Canceled {
+			// Interrupted by user
+			return fmt.Errorf("code review interrupted by user")
+		}
 		return fmt.Errorf("failed to perform code review: %w", err)
 	}
 

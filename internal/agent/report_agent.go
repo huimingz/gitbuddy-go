@@ -156,6 +156,7 @@ type ReportAgentOptions struct {
 	Printer     *ui.StreamPrinter
 	Output      io.Writer
 	Debug       bool
+	RetryConfig llm.RetryConfig
 }
 
 // ReportAgent generates development reports using LLM
@@ -350,8 +351,10 @@ func (a *ReportAgent) GenerateReport(ctx context.Context, req ReportRequest) (*R
 	for i := 0; i < maxIterations; i++ {
 		printProgress(fmt.Sprintf("Agent iteration %d...", i+1))
 
-		// Stream LLM response
-		streamReader, err := chatModel.Stream(ctx, messages)
+		// Stream LLM response with retry
+		streamReader, err := llm.WithRetryResult(ctx, a.opts.RetryConfig, func() (*schema.StreamReader[*schema.Message], error) {
+			return chatModel.Stream(ctx, messages)
+		})
 		if err != nil {
 			return nil, fmt.Errorf("LLM stream failed: %w", err)
 		}

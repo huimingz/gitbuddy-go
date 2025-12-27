@@ -30,6 +30,8 @@ GitBuddy-Go is an AI-powered command-line tool that automates and enhances your 
 - **🔍 Code Review**: AI-powered code review that identifies bugs, security issues, performance problems, and style suggestions
 - **🐛 Issue Debugging**: Interactive AI assistant that systematically analyzes and debugs code issues
 - **📊 Development Reports**: Generates structured weekly/monthly development reports from commit history
+- **🔄 Automatic Retry**: Smart retry mechanism with exponential backoff for handling transient LLM API failures
+- **💾 Session Management**: Save and resume long-running debug/review sessions with Ctrl+C support
 - **🌍 Multi-Language Support**: Generate output in any language (English, Chinese, Japanese, etc.)
 - **🔧 Multiple LLM Providers**: Supports OpenAI, DeepSeek, Ollama, Grok, and Google Gemini
 - **📡 Real-time Streaming**: See the AI's analysis process in real-time with streaming output
@@ -138,7 +140,7 @@ review:
 # Debug settings (optional)
 debug:
   issues_dir: ./issues           # Directory to save debug reports
-  max_iterations: 30             # Maximum agent iterations before asking to continue
+  max_iterations: 50             # Maximum agent iterations before asking to continue
   enable_compression: true       # Enable message history compression
   compression_threshold: 20      # Compress when message count exceeds this
   compression_keep_recent: 10    # Number of recent messages to keep after compression
@@ -147,6 +149,19 @@ debug:
   grep_max_file_size: 10         # Maximum file size for grep in MB
   grep_timeout: 10               # Grep operation timeout in seconds
   grep_max_results: 100          # Maximum number of grep results
+
+# Retry settings (optional)
+retry:
+  enabled: true                  # Enable automatic retry for LLM API calls
+  max_attempts: 3                # Maximum number of retry attempts
+  backoff_base: 1.0              # Base backoff duration in seconds
+  backoff_max: 30.0              # Maximum backoff duration in seconds
+
+# Session settings (optional)
+session:
+  save_dir: ~/.gitbuddy/sessions # Directory to save session files
+  auto_save: true                # Automatically save sessions on interruption
+  max_sessions: 50               # Maximum number of sessions to keep
 ```
 
 ### Configuration Priority
@@ -255,6 +270,9 @@ gitbuddy debug "Database connection timeout" --issues-dir ./debug-reports
 gitbuddy debug "Complex issue" --max-iterations 50
 
 # In interactive mode, you'll be asked if you want to continue when max iterations is reached
+
+# Resume a previously interrupted session
+gitbuddy debug --resume debug-20240127-120000-abc123
 ```
 
 The debug command:
@@ -263,6 +281,25 @@ The debug command:
 - 💬 **Interactively asks** for your input when needed (with `--interactive` flag)
 - 📋 **Generates detailed reports** with root cause analysis and fix suggestions
 - 💾 **Saves reports** to the `./issues` directory for future reference
+- 🔄 **Supports session resume**: Press Ctrl+C to interrupt, then resume later with `--resume`
+
+### Session Management
+
+```bash
+# List all saved sessions
+gitbuddy sessions list
+
+# Show details of a specific session
+gitbuddy sessions show debug-20240127-120000-abc123
+
+# Delete a session
+gitbuddy sessions delete debug-20240127-120000-abc123
+
+# Clean up old sessions, keeping only the 10 most recent
+gitbuddy sessions clean --max 10
+```
+
+Sessions are automatically saved when you interrupt a debug or review command with Ctrl+C. You can resume them later using the `--resume` flag.
 
 ### Other Commands
 
@@ -325,6 +362,17 @@ GitBuddy uses an **agentic approach** where the LLM autonomously decides which G
 
 This agentic approach allows the LLM to gather exactly the context it needs, resulting in more accurate and relevant output.
 
+## Automatic Retry and Error Handling
+
+GitBuddy includes intelligent retry mechanisms to handle transient LLM API failures:
+
+- **Smart Error Classification**: Automatically distinguishes between retryable errors (network issues, timeouts, 503, 429) and non-retryable errors (400, 401, context exceeded)
+- **Exponential Backoff**: Implements exponential backoff strategy to avoid overwhelming the API
+- **Configurable Retries**: Customize retry behavior through configuration (max attempts, backoff duration)
+- **User-Friendly Messages**: Clear feedback when retries are happening
+
+When an LLM API call fails with a retryable error, GitBuddy will automatically retry with increasing delays between attempts.
+
 ## Debug Mode
 
 Enable debug mode to see detailed information:
@@ -337,6 +385,7 @@ This shows:
 - Configuration details
 - LLM provider and model being used
 - Tool calls and their results
+- Retry attempts and backoff timings
 - Token usage statistics
 - Execution time
 

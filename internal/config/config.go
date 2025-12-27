@@ -35,6 +35,8 @@ type Config struct {
 	PRTemplate   *PRTemplateConfig      `yaml:"pr_template" mapstructure:"pr_template"`
 	Review       *ReviewConfig          `yaml:"review" mapstructure:"review"`
 	Debug        *DebugConfig           `yaml:"debug" mapstructure:"debug"`
+	Retry        *RetryConfig           `yaml:"retry" mapstructure:"retry"`
+	Session      *SessionConfig         `yaml:"session" mapstructure:"session"`
 }
 
 // ReviewConfig represents the review command configuration
@@ -74,7 +76,7 @@ func DefaultDebugConfig() *DebugConfig {
 	return &DebugConfig{
 		MaxLinesPerRead:        1000,
 		IssuesDir:              "./issues",
-		MaxIterations:          30,    // 30 iterations
+		MaxIterations:          50,    // 50 iterations (increased from 30)
 		EnableCompression:      true,  // Enable compression by default
 		CompressionThreshold:   20,    // Compress when > 20 messages
 		CompressionKeepRecent:  10,    // Keep last 10 messages
@@ -89,6 +91,65 @@ func DefaultDebugConfig() *DebugConfig {
 type PRTemplateConfig struct {
 	Template string `yaml:"template" mapstructure:"template"` // Inline template content
 	File     string `yaml:"file" mapstructure:"file"`         // Path to template file
+}
+
+// RetryConfig represents the retry configuration
+type RetryConfig struct {
+	Enabled     bool    `yaml:"enabled" mapstructure:"enabled"`
+	MaxAttempts int     `yaml:"max_attempts" mapstructure:"max_attempts"`
+	BackoffBase float64 `yaml:"backoff_base" mapstructure:"backoff_base"` // in seconds
+	BackoffMax  float64 `yaml:"backoff_max" mapstructure:"backoff_max"`   // in seconds
+}
+
+// DefaultRetryConfig returns the default retry configuration
+func DefaultRetryConfig() *RetryConfig {
+	return &RetryConfig{
+		Enabled:     true,
+		MaxAttempts: 3,
+		BackoffBase: 1.0,
+		BackoffMax:  8.0,
+	}
+}
+
+// Validate validates the retry configuration
+func (r *RetryConfig) Validate() error {
+	if r.MaxAttempts < 0 {
+		return fmt.Errorf("max_attempts must be non-negative")
+	}
+	if r.BackoffBase < 0 {
+		return fmt.Errorf("backoff_base must be non-negative")
+	}
+	if r.BackoffMax < r.BackoffBase {
+		return fmt.Errorf("backoff_max must be greater than or equal to backoff_base")
+	}
+	return nil
+}
+
+// SessionConfig represents the session configuration
+type SessionConfig struct {
+	SaveDir     string `yaml:"save_dir" mapstructure:"save_dir"`
+	AutoSave    bool   `yaml:"auto_save" mapstructure:"auto_save"`
+	MaxSessions int    `yaml:"max_sessions" mapstructure:"max_sessions"`
+}
+
+// DefaultSessionConfig returns the default session configuration
+func DefaultSessionConfig() *SessionConfig {
+	return &SessionConfig{
+		SaveDir:     "./.gitbuddy/sessions",
+		AutoSave:    true,
+		MaxSessions: 10,
+	}
+}
+
+// Validate validates the session configuration
+func (s *SessionConfig) Validate() error {
+	if s.SaveDir == "" {
+		return fmt.Errorf("save_dir is required")
+	}
+	if s.MaxSessions < 0 {
+		return fmt.Errorf("max_sessions must be non-negative")
+	}
+	return nil
 }
 
 // ModelConfig represents a single model configuration
@@ -134,6 +195,20 @@ func (c *Config) Validate() error {
 	for name, model := range c.Models {
 		if err := model.Validate(); err != nil {
 			return fmt.Errorf("invalid model '%s': %w", name, err)
+		}
+	}
+
+	// Validate retry config if present
+	if c.Retry != nil {
+		if err := c.Retry.Validate(); err != nil {
+			return fmt.Errorf("invalid retry configuration: %w", err)
+		}
+	}
+
+	// Validate session config if present
+	if c.Session != nil {
+		if err := c.Session.Validate(); err != nil {
+			return fmt.Errorf("invalid session configuration: %w", err)
 		}
 	}
 
@@ -245,6 +320,41 @@ func (c *Config) GetDebugConfig() *DebugConfig {
 		c.Debug.GrepMaxResults = defaults.GrepMaxResults
 	}
 	return c.Debug
+}
+
+// GetRetryConfig returns the retry configuration with defaults applied
+func (c *Config) GetRetryConfig() *RetryConfig {
+	if c.Retry == nil {
+		return DefaultRetryConfig()
+	}
+	// Apply defaults for unset values
+	defaults := DefaultRetryConfig()
+	if c.Retry.MaxAttempts < 0 {
+		c.Retry.MaxAttempts = defaults.MaxAttempts
+	}
+	if c.Retry.BackoffBase < 0 {
+		c.Retry.BackoffBase = defaults.BackoffBase
+	}
+	if c.Retry.BackoffMax < 0 {
+		c.Retry.BackoffMax = defaults.BackoffMax
+	}
+	return c.Retry
+}
+
+// GetSessionConfig returns the session configuration with defaults applied
+func (c *Config) GetSessionConfig() *SessionConfig {
+	if c.Session == nil {
+		return DefaultSessionConfig()
+	}
+	// Apply defaults for unset values
+	defaults := DefaultSessionConfig()
+	if c.Session.SaveDir == "" {
+		c.Session.SaveDir = defaults.SaveDir
+	}
+	if c.Session.MaxSessions < 0 {
+		c.Session.MaxSessions = defaults.MaxSessions
+	}
+	return c.Session
 }
 
 // GetPRTemplate returns the PR template content

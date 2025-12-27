@@ -106,6 +106,7 @@ type CommitAgentOptions struct {
 	Printer     *ui.StreamPrinter
 	Output      io.Writer
 	Debug       bool
+	RetryConfig llm.RetryConfig
 }
 
 // Validate validates the options and sets defaults
@@ -300,8 +301,10 @@ func (a *CommitAgent) GenerateCommitMessage(ctx context.Context, req CommitReque
 	for i := 0; i < maxIterations; i++ {
 		printProgress(fmt.Sprintf("Agent iteration %d...", i+1))
 
-		// Stream LLM response
-		streamReader, err := chatModel.Stream(ctx, messages)
+		// Stream LLM response with retry
+		streamReader, err := llm.WithRetryResult(ctx, a.opts.RetryConfig, func() (*schema.StreamReader[*schema.Message], error) {
+			return chatModel.Stream(ctx, messages)
+		})
 		if err != nil {
 			return nil, fmt.Errorf("LLM stream failed: %w", err)
 		}

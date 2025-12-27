@@ -400,6 +400,180 @@ func TestConfig_GetPRTemplate(t *testing.T) {
 	})
 }
 
+func TestRetryConfig_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  RetryConfig
+		wantErr bool
+	}{
+		{
+			name:    "valid config",
+			config:  *DefaultRetryConfig(),
+			wantErr: false,
+		},
+		{
+			name: "negative max attempts",
+			config: RetryConfig{
+				MaxAttempts: -1,
+				BackoffBase: 1.0,
+				BackoffMax:  8.0,
+			},
+			wantErr: true,
+		},
+		{
+			name: "negative backoff base",
+			config: RetryConfig{
+				MaxAttempts: 3,
+				BackoffBase: -1.0,
+				BackoffMax:  8.0,
+			},
+			wantErr: true,
+		},
+		{
+			name: "backoff max less than base",
+			config: RetryConfig{
+				MaxAttempts: 3,
+				BackoffBase: 10.0,
+				BackoffMax:  5.0,
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.config.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestSessionConfig_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  SessionConfig
+		wantErr bool
+	}{
+		{
+			name:    "valid config",
+			config:  *DefaultSessionConfig(),
+			wantErr: false,
+		},
+		{
+			name: "empty save dir",
+			config: SessionConfig{
+				SaveDir:     "",
+				AutoSave:    true,
+				MaxSessions: 10,
+			},
+			wantErr: true,
+		},
+		{
+			name: "negative max sessions",
+			config: SessionConfig{
+				SaveDir:     "./.gitbuddy/sessions",
+				AutoSave:    true,
+				MaxSessions: -1,
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.config.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestConfig_GetRetryConfig(t *testing.T) {
+	tests := []struct {
+		name   string
+		config *Config
+		want   *RetryConfig
+	}{
+		{
+			name: "returns default when nil",
+			config: &Config{
+				Retry: nil,
+			},
+			want: DefaultRetryConfig(),
+		},
+		{
+			name: "returns configured values",
+			config: &Config{
+				Retry: &RetryConfig{
+					Enabled:     false,
+					MaxAttempts: 5,
+					BackoffBase: 2.0,
+					BackoffMax:  16.0,
+				},
+			},
+			want: &RetryConfig{
+				Enabled:     false,
+				MaxAttempts: 5,
+				BackoffBase: 2.0,
+				BackoffMax:  16.0,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.config.GetRetryConfig()
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestConfig_GetSessionConfig(t *testing.T) {
+	tests := []struct {
+		name   string
+		config *Config
+		want   *SessionConfig
+	}{
+		{
+			name: "returns default when nil",
+			config: &Config{
+				Session: nil,
+			},
+			want: DefaultSessionConfig(),
+		},
+		{
+			name: "returns configured values",
+			config: &Config{
+				Session: &SessionConfig{
+					SaveDir:     "/tmp/sessions",
+					AutoSave:    false,
+					MaxSessions: 20,
+				},
+			},
+			want: &SessionConfig{
+				SaveDir:     "/tmp/sessions",
+				AutoSave:    false,
+				MaxSessions: 20,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.config.GetSessionConfig()
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestDefaultDebugConfig_MaxIterations(t *testing.T) {
+	cfg := DefaultDebugConfig()
+	assert.Equal(t, 50, cfg.MaxIterations, "Default max iterations should be 50")
+}
+
 func TestLoadFromFile_WithPRTemplate(t *testing.T) {
 	// Create a temporary config file with PR template
 	tmpDir := t.TempDir()

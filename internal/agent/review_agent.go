@@ -11,6 +11,7 @@ import (
 
 	"github.com/cloudwego/eino/schema"
 
+	"github.com/huimingz/gitbuddy-go/internal/agent/session"
 	"github.com/huimingz/gitbuddy-go/internal/agent/tools"
 	"github.com/huimingz/gitbuddy-go/internal/git"
 	"github.com/huimingz/gitbuddy-go/internal/llm"
@@ -36,13 +37,14 @@ const (
 
 // ReviewRequest contains the input for code review
 type ReviewRequest struct {
-	Language string   // Output language
-	Context  string   // Additional context from user
-	Files    []string // Specific files to review (empty = all staged)
-	Severity string   // Minimum severity filter (error, warning, info)
-	Focus    []string // Focus areas (security, performance, style)
-	WorkDir  string   // Working directory
-	MaxLines int      // Maximum lines per file read
+	Language string           // Output language
+	Context  string           // Additional context from user
+	Files    []string         // Specific files to review (empty = all staged)
+	Severity string           // Minimum severity filter (error, warning, info)
+	Focus    []string         // Focus areas (security, performance, style)
+	WorkDir  string           // Working directory
+	MaxLines int              // Maximum lines per file read
+	Session  *session.Session // Optional session to resume from
 }
 
 // ReviewIssue represents a single issue found during review
@@ -60,6 +62,7 @@ type ReviewIssue struct {
 type ReviewResponse struct {
 	Issues           []ReviewIssue
 	Summary          string
+	SessionID        string // Session ID for resuming
 	PromptTokens     int
 	CompletionTokens int
 	TotalTokens      int
@@ -85,6 +88,7 @@ type ReviewAgentOptions struct {
 	Debug           bool
 	WorkDir         string
 	MaxLinesPerRead int
+	RetryConfig     llm.RetryConfig
 }
 
 // ReviewAgent performs code review using LLM
@@ -297,7 +301,10 @@ func (a *ReviewAgent) Review(ctx context.Context, req ReviewRequest) (*ReviewRes
 		printProgress(fmt.Sprintf("Agent iteration %d...", i+1))
 
 		// Stream LLM response
-		streamReader, err := chatModel.Stream(ctx, messages)
+		// Stream LLM response with retry
+		streamReader, err := llm.WithRetryResult(ctx, a.opts.RetryConfig, func() (*schema.StreamReader[*schema.Message], error) {
+			return chatModel.Stream(ctx, messages)
+		})
 		if err != nil {
 			return nil, fmt.Errorf("LLM stream failed: %w", err)
 		}

@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/huimingz/gitbuddy-go/internal/agent"
+	"github.com/huimingz/gitbuddy-go/internal/agent/session"
 	"github.com/huimingz/gitbuddy-go/internal/config"
 	"github.com/huimingz/gitbuddy-go/internal/git"
 	"github.com/huimingz/gitbuddy-go/internal/llm"
@@ -23,6 +26,7 @@ var (
 	debugInteractive   bool
 	debugIssuesDir     string
 	debugMaxIterations int
+	debugResume        string
 )
 
 var debugCmd = &cobra.Command{
@@ -59,6 +63,7 @@ func init() {
 	debugCmd.Flags().BoolVarP(&debugInteractive, "interactive", "i", false, "Enable interactive mode (agent can ask for your input)")
 	debugCmd.Flags().StringVar(&debugIssuesDir, "issues-dir", "./issues", "Directory to save debug reports")
 	debugCmd.Flags().IntVar(&debugMaxIterations, "max-iterations", 0, "Maximum number of agent iterations (0 = use config default)")
+	debugCmd.Flags().StringVar(&debugResume, "resume", "", "Resume from a previous session (session ID)")
 
 	rootCmd.AddCommand(debugCmd)
 }
@@ -140,6 +145,21 @@ func runDebug(cmd *cobra.Command, args []string) error {
 	// Create stream printer for output
 	printer := ui.NewStreamPrinter(os.Stdout, ui.WithVerbose(debugMode))
 
+	// Get retry and session config
+	retryConfigPtr := cfg.GetRetryConfig()
+	sessionConfig := cfg.GetSessionConfig()
+
+	// Convert config.RetryConfig to llm.RetryConfig
+	retryConfig := llm.RetryConfig{
+		Enabled:     retryConfigPtr.Enabled,
+		MaxAttempts: retryConfigPtr.MaxAttempts,
+		BackoffBase: retryConfigPtr.BackoffBase,
+		BackoffMax:  retryConfigPtr.BackoffMax,
+	}
+
+	// Create session manager
+	sessionMgr := session.NewManager(sessionConfig.SaveDir)
+
 	// Create debug agent
 	debugAgent := agent.NewDebugAgent(agent.DebugAgentOptions{
 		Language:        language,
@@ -152,10 +172,51 @@ func runDebug(cmd *cobra.Command, args []string) error {
 		WorkDir:         workDir,
 		IssuesDir:       issuesDir,
 		MaxLinesPerRead: debugCfg.MaxLinesPerRead,
+		RetryConfig:     retryConfig,
 	})
 
-	// Print initial indicator
-	_ = printer.PrintThinking("Starting debugging session...")
+	// Setup context with cancellation for Ctrl+C handling
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Setup signal handling for Ctrl+C
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	var currentSessionID string
+	go func() {
+		<-sigChan
+		fmt.Println("\n\n⚠️  Received interrupt signal. Saving session...")
+		cancel()
+
+		// Give some time for graceful shutdown
+		time.Sleep(500 * time.Millisecond)
+
+		if currentSessionID != "" && sessionConfig.AutoSave {
+			fmt.Printf("✓ Session saved: %s\n", currentSessionID)
+			fmt.Printf("  Resume with: gitbuddy debug --resume %s\n", currentSessionID)
+		}
+		os.Exit(130) // Standard exit code for SIGINT
+	}()
+
+	// Check if resuming from a previous session
+	var sess *session.Session
+	if debugResume != "" {
+		_ = printer.PrintInfo(fmt.Sprintf("Resuming session: %s", debugResume))
+
+		loadedSession, err := sessionMgr.Load(debugResume)
+		if err != nil {
+			return fmt.Errorf("failed to load session: %w", err)
+		}
+
+		sess = loadedSession
+		currentSessionID = sess.ID
+
+		_ = printer.PrintSuccess(fmt.Sprintf("Session loaded (iterations: %d/%d)", sess.IterationCount, sess.MaxIterations))
+	} else {
+		// Print initial indicator
+		_ = printer.PrintThinking("Starting debugging session...")
+	}
 
 	// Perform debugging
 	req := agent.DebugRequest{
@@ -172,10 +233,26 @@ func runDebug(cmd *cobra.Command, args []string) error {
 		CompressionThreshold:   debugCfg.CompressionThreshold,
 		CompressionKeepRecent:  debugCfg.CompressionKeepRecent,
 		ShowCompressionSummary: debugCfg.ShowCompressionSummary,
+		Session:                sess,
 	}
 
 	response, err := debugAgent.Debug(ctx, req)
+
+	// Save session on success or interruption
+	if response != nil && response.SessionID != "" {
+		currentSessionID = response.SessionID
+
+		if sessionConfig.AutoSave {
+			// Session should be saved by the agent itself
+			_ = printer.PrintInfo(fmt.Sprintf("Session ID: %s", response.SessionID))
+		}
+	}
+
 	if err != nil {
+		if ctx.Err() == context.Canceled {
+			// Interrupted by user
+			return fmt.Errorf("debugging interrupted by user")
+		}
 		return fmt.Errorf("failed to debug issue: %w", err)
 	}
 

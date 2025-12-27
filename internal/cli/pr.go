@@ -95,6 +95,17 @@ func runPR(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("base branch cannot be the same as current branch (%s)", currentBranch)
 	}
 
+	// Get retry config
+	retryConfigPtr := cfg.GetRetryConfig()
+
+	// Convert config.RetryConfig to llm.RetryConfig
+	retryConfig := llm.RetryConfig{
+		Enabled:     retryConfigPtr.Enabled,
+		MaxAttempts: retryConfigPtr.MaxAttempts,
+		BackoffBase: retryConfigPtr.BackoffBase,
+		BackoffMax:  retryConfigPtr.BackoffMax,
+	}
+
 	// Create stream printer for output
 	printer := ui.NewStreamPrinter(os.Stdout, ui.WithVerbose(debugMode))
 
@@ -106,6 +117,7 @@ func runPR(cmd *cobra.Command, args []string) error {
 		LLMProvider: provider,
 		Printer:     printer,
 		Debug:       debugMode,
+		RetryConfig: retryConfig,
 	})
 
 	// Print initial indicator

@@ -30,6 +30,8 @@ GitBuddy-Go 是一个 AI 驱动的命令行工具，用于自动化和增强日�
 - **🔍 代码审查**: AI 驱动的代码审查，识别 bugs、安全隐患、性能问题和代码风格建议
 - **🐛 问题排查**: 交互式 AI 助手，系统化地分析和调试代码问题
 - **📊 开发报告**: 根据提交历史生成结构化的周报/月报
+- **🔄 自动重试**: 智能重试机制，采用指数退避策略处理 LLM API 临时故障
+- **💾 会话管理**: 支持保存和恢复长时间运行的 debug/review 会话，支持 Ctrl+C 中断
 - **🌍 多语言支持**: 支持任意语言输出（中文、英文、日文等）
 - **🔧 多 LLM 支持**: 支持 OpenAI、DeepSeek、Ollama、Grok 和 Google Gemini
 - **📡 实时流式输出**: 实时查看 AI 的分析过程
@@ -138,7 +140,7 @@ review:
 # 问题排查设置（可选）
 debug:
   issues_dir: ./issues           # 保存调试报告的目录
-  max_iterations: 30             # Agent 最大迭代次数（达到后询问是否继续）
+  max_iterations: 50             # Agent 最大迭代次数（达到后询问是否继续）
   enable_compression: true       # 启用消息历史压缩
   compression_threshold: 20      # 消息数超过此值时触发压缩
   compression_keep_recent: 10    # 压缩后保留的最近消息数
@@ -147,6 +149,19 @@ debug:
   grep_max_file_size: 10         # grep 最大文件大小（MB）
   grep_timeout: 10               # grep 操作超时时间（秒）
   grep_max_results: 100          # grep 最大结果数量
+
+# 重试设置（可选）
+retry:
+  enabled: true                  # 启用 LLM API 调用自动重试
+  max_attempts: 3                # 最大重试次数
+  backoff_base: 1.0              # 基础退避时间（秒）
+  backoff_max: 30.0              # 最大退避时间（秒）
+
+# 会话设置（可选）
+session:
+  save_dir: ~/.gitbuddy/sessions # 会话文件保存目录
+  auto_save: true                # 中断时自动保存会话
+  max_sessions: 50               # 保留的最大会话数
 ```
 
 ### 配置优先级
@@ -255,6 +270,9 @@ gitbuddy debug "数据库连接超时" --issues-dir ./debug-reports
 gitbuddy debug "复杂问题" --max-iterations 50
 
 # 在交互式模式下，达到最大迭代次数后会询问是否继续
+
+# 恢复之前中断的会话
+gitbuddy debug --resume debug-20240127-120000-abc123
 ```
 
 问题排查功能：
@@ -263,6 +281,25 @@ gitbuddy debug "复杂问题" --max-iterations 50
 - 💬 **交互式询问**: 在需要时询问你的意见（使用 `--interactive` 标志）
 - 📋 **生成详细报告**: 生成包含根本原因分析和修复建议的详细报告
 - 💾 **保存报告**: 将报告保存到 `./issues` 目录以供将来参考
+- 🔄 **支持会话恢复**: 按 Ctrl+C 中断后，可使用 `--resume` 恢复
+
+### 会话管理
+
+```bash
+# 列出所有保存的会话
+gitbuddy sessions list
+
+# 显示特定会话的详细信息
+gitbuddy sessions show debug-20240127-120000-abc123
+
+# 删除会话
+gitbuddy sessions delete debug-20240127-120000-abc123
+
+# 清理旧会话，只保留最近的 10 个
+gitbuddy sessions clean --max 10
+```
+
+当你使用 Ctrl+C 中断 debug 或 review 命令时，会话会自动保存。你可以稍后使用 `--resume` 参数恢复它们。
 
 ### 其他命令
 
@@ -325,6 +362,17 @@ GitBuddy 采用 **Agent 方式**，LLM 自主决定执行哪些 Git 命令：
 
 这种 Agent 方式让 LLM 能够准确获取所需的上下文，从而生成更准确、更相关的输出。
 
+## 自动重试和错误处理
+
+GitBuddy 包含智能重试机制来处理 LLM API 的临时故障：
+
+- **智能错误分类**: 自动区分可重试错误（网络问题、超时、503、429）和不可重试错误（400、401、上下文超限）
+- **指数退避**: 实现指数退避策略，避免对 API 造成过大压力
+- **可配置重试**: 通过配置自定义重试行为（最大尝试次数、退避时间）
+- **用户友好提示**: 重试时提供清晰的反馈信息
+
+当 LLM API 调用因可重试错误失败时，GitBuddy 会自动重试，并在每次尝试之间增加延迟时间。
+
 ## 调试模式
 
 启用调试模式查看详细信息：
@@ -337,6 +385,7 @@ gitbuddy commit --debug
 - 配置详情
 - 使用的 LLM 提供商和模型
 - 工具调用及其结果
+- 重试尝试和退避时间
 - Token 使用统计
 - 执行时间
 

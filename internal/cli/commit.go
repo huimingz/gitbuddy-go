@@ -109,6 +109,17 @@ func runCommit(cmd *cobra.Command, args []string) error {
 
 	log.Debug("LLM provider created successfully")
 
+	// Get retry config
+	retryConfigPtr := cfg.GetRetryConfig()
+
+	// Convert config.RetryConfig to llm.RetryConfig
+	retryConfig := llm.RetryConfig{
+		Enabled:     retryConfigPtr.Enabled,
+		MaxAttempts: retryConfigPtr.MaxAttempts,
+		BackoffBase: retryConfigPtr.BackoffBase,
+		BackoffMax:  retryConfigPtr.BackoffMax,
+	}
+
 	// Setup stream printer
 	printer := ui.NewStreamPrinter(os.Stdout, ui.WithVerbose(debugMode))
 
@@ -120,6 +131,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 		Printer:     printer,
 		Output:      os.Stdout,
 		Debug:       debugMode,
+		RetryConfig: retryConfig,
 	}
 
 	commitAgent, err := agent.NewCommitAgent(agentOpts)
