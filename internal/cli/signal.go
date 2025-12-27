@@ -61,12 +61,55 @@ func (h *SessionInterruptHandler) handleSignals() {
 
 	fmt.Println("\n\n⚠️  Received interrupt signal.")
 
-	// Always ask user if they want to save the session when interrupted
-	confirmed, err := ui.ConfirmWithDefault("Do you want to save the current session?", true, os.Stdin, os.Stdout)
-	if err != nil {
+	// **IMMEDIATELY** cancel the context to stop the agent
+	fmt.Println("Stopping agent...")
+	h.cancel()
+
+	// Give a short time for the agent to stop gracefully
+	time.Sleep(200 * time.Millisecond)
+
+	// Setup a channel to listen for second interrupt signal during confirmation
+	forceExit := make(chan bool, 1)
+	go func() {
+		select {
+		case <-h.sigChan:
+			// Second Ctrl+C received during confirmation
+			fmt.Println("\n\n🛑  Force exit requested.")
+			forceExit <- true
+		case <-time.After(30 * time.Second):
+			// Timeout after 30 seconds
+			fmt.Println("\n⏰  Confirmation timeout. Exiting without saving.")
+			forceExit <- false
+		}
+	}()
+
+	// Ask user if they want to save the session with timeout
+	confirmationChan := make(chan bool, 1)
+	errorChan := make(chan error, 1)
+	go func() {
+		confirmed, err := ui.ConfirmWithDefault("Do you want to save the current session? (Ctrl+C again to force exit)", true, os.Stdin, os.Stdout)
+		if err != nil {
+			errorChan <- err
+		} else {
+			confirmationChan <- confirmed
+		}
+	}()
+
+	var confirmed bool
+	select {
+	case forceExit := <-forceExit:
+		if forceExit {
+			fmt.Println("Forcing immediate exit...")
+			os.Exit(130)
+		} else {
+			// Timeout - exit without saving
+			confirmed = false
+		}
+	case confirmed = <-confirmationChan:
+		// User provided input
+	case err := <-errorChan:
 		fmt.Printf("Error reading input: %v\n", err)
-		// Default to saving on error
-		confirmed = true
+		confirmed = true // Default to saving on error
 	}
 
 	if confirmed {
@@ -83,12 +126,6 @@ func (h *SessionInterruptHandler) handleSignals() {
 	} else {
 		fmt.Println("Session not saved.")
 	}
-
-	// Cancel the context to stop the agent
-	h.cancel()
-
-	// Give some more time for graceful shutdown
-	time.Sleep(500 * time.Millisecond)
 
 	os.Exit(130) // Standard exit code for SIGINT
 }

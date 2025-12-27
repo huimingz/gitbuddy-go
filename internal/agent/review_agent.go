@@ -351,6 +351,40 @@ func (a *ReviewAgent) Review(ctx context.Context, req ReviewRequest) (*ReviewRes
 
 	// Agent loop
 	for i := 0; i < maxIterations; i++ {
+		// Check if context was cancelled (e.g., due to Ctrl+C)
+		select {
+		case <-ctx.Done():
+			printProgress("Review execution cancelled by user")
+			// Save current session state before returning
+			if a.opts.SessionManager != nil && currentSession != nil {
+				currentSession.Messages = messages
+				currentSession.IterationCount = i + 1
+				currentSession.MaxIterations = maxIterations
+				currentSession.TokenUsage = session.TokenUsage{
+					PromptTokens:     promptTokens,
+					CompletionTokens: completionTokens,
+					TotalTokens:      totalTokens,
+				}
+
+				// Save session on cancellation
+				if err := a.opts.SessionManager.Save(currentSession); err != nil {
+					log.Debug("Failed to save session on cancellation: %v", err)
+				} else {
+					log.Debug("Session %s saved on cancellation", sessionID)
+				}
+			}
+			return &ReviewResponse{
+				Issues:           []ReviewIssue{},
+				Summary:          "Review session was cancelled by user",
+				SessionID:        sessionID,
+				PromptTokens:     promptTokens,
+				CompletionTokens: completionTokens,
+				TotalTokens:      totalTokens,
+			}, ctx.Err()
+		default:
+			// Continue with normal execution
+		}
+
 		printProgress(fmt.Sprintf("Agent iteration %d...", i+1))
 
 		// Stream LLM response
