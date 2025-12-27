@@ -38,14 +38,15 @@ const (
 
 // ReviewRequest contains the input for code review
 type ReviewRequest struct {
-	Language string           // Output language
-	Context  string           // Additional context from user
-	Files    []string         // Specific files to review (empty = all staged)
-	Severity string           // Minimum severity filter (error, warning, info)
-	Focus    []string         // Focus areas (security, performance, style)
-	WorkDir  string           // Working directory
-	MaxLines int              // Maximum lines per file read
-	Session  *session.Session // Optional session to resume from
+	Language              string           // Output language
+	Context               string           // Additional context from user
+	Files                 []string         // Specific files to review (empty = all staged)
+	Severity              string           // Minimum severity filter (error, warning, info)
+	Focus                 []string         // Focus areas (security, performance, style)
+	WorkDir               string           // Working directory
+	MaxLines              int              // Maximum lines per file read
+	Session               *session.Session // Optional session to resume from
+	PreGeneratedSessionID string           // Optional pre-generated session ID
 }
 
 // ReviewIssue represents a single issue found during review
@@ -320,7 +321,11 @@ func (a *ReviewAgent) Review(ctx context.Context, req ReviewRequest) (*ReviewRes
 		printProgress(fmt.Sprintf("Resumed session %s", sessionID))
 	} else {
 		// Create new session
-		sessionID = session.GenerateSessionID("review")
+		if req.PreGeneratedSessionID != "" {
+			sessionID = req.PreGeneratedSessionID
+		} else {
+			sessionID = session.GenerateSessionID("review")
+		}
 		currentSession = &session.Session{
 			ID:             sessionID,
 			AgentType:      "review",

@@ -210,20 +210,23 @@ func runReview(cmd *cobra.Command, args []string) error {
 
 		_ = printer.PrintSuccess(fmt.Sprintf("Session loaded (iterations: %d/%d)", sess.IterationCount, sess.MaxIterations))
 	} else {
-		// Print initial indicator
+		// Generate session ID early so interrupt handler can access it
+		currentSessionID = session.GenerateSessionID("review")
 		_ = printer.PrintThinking("Starting code review...")
+		_ = printer.PrintInfo(fmt.Sprintf("Session ID: %s", currentSessionID))
 	}
 
 	// Perform review
 	req := agent.ReviewRequest{
-		Language: language,
-		Context:  reviewContext,
-		Files:    files,
-		Severity: reviewSeverity,
-		Focus:    focus,
-		WorkDir:  workDir,
-		MaxLines: reviewCfg.MaxLinesPerRead,
-		Session:  sess,
+		Language:              language,
+		Context:               reviewContext,
+		Files:                 files,
+		Severity:              reviewSeverity,
+		Focus:                 focus,
+		WorkDir:               workDir,
+		MaxLines:              reviewCfg.MaxLinesPerRead,
+		Session:               sess,
+		PreGeneratedSessionID: currentSessionID, // Pass the pre-generated session ID
 	}
 
 	response, err := reviewAgent.Review(ctx, req)
