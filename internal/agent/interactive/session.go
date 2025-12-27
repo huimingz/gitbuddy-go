@@ -93,6 +93,11 @@ func (s *InteractiveSession) Start(ctx context.Context, input io.Reader, output 
 
 	// Check if we can use go-prompt (only for stdin/stdout in terminal)
 	if input == os.Stdin && output == os.Stdout {
+		// Try go-prompt first, but provide Bubbletea as fallback for better Unicode support
+		// Users can set GITBUDDY_USE_BUBBLETEA=1 to force Bubbletea usage
+		if os.Getenv("GITBUDDY_USE_BUBBLETEA") == "1" {
+			return s.startWithBubbletea(ctx)
+		}
 		return s.startWithGoPrompt(ctx)
 	}
 
@@ -102,7 +107,7 @@ func (s *InteractiveSession) Start(ctx context.Context, input io.Reader, output 
 
 // startWithGoPrompt uses go-prompt for excellent terminal experience with proper Chinese character handling
 func (s *InteractiveSession) startWithGoPrompt(ctx context.Context) error {
-	// Create prompt with auto-completion and history
+	// Create prompt with auto-completion and history, with enhanced Unicode/Chinese character support
 	p := prompt.New(
 		s.executor,     // Function to handle user input
 		s.completer,    // Function for auto-completion
@@ -116,6 +121,11 @@ func (s *InteractiveSession) startWithGoPrompt(ctx context.Context) error {
 		prompt.OptionSelectedSuggestionBGColor(prompt.LightGray),
 		prompt.OptionSuggestionBGColor(prompt.DarkGray),
 		prompt.OptionMaxSuggestion(10),
+		// Enhanced options for better Unicode/Chinese character handling
+		prompt.OptionShowCompletionAtStart(),     // Show completion immediately
+		prompt.OptionCompletionOnDown(),          // Better completion navigation
+		// Try different key binding modes - some handle Unicode better
+		prompt.OptionSwitchKeyBindMode(prompt.CommonKeyBind), // CommonKeyBind might handle wide chars better than Emacs
 	)
 
 	// Start the prompt - this blocks until exit
