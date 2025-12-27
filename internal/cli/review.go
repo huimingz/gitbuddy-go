@@ -243,8 +243,10 @@ func runReview(cmd *cobra.Command, args []string) error {
 
 	if err != nil {
 		if ctx.Err() == context.Canceled {
-			// Interrupted by user
-			return fmt.Errorf("code review interrupted by user")
+			// Interrupted by user - wait for interrupt handler to complete user interaction
+			// The interrupt handler will handle the user confirmation and exit the program
+			// So we just wait here indefinitely (the handler will call os.Exit)
+			select {} // Block forever - interrupt handler will exit the program
 		}
 		return fmt.Errorf("failed to perform code review: %w", err)
 	}
