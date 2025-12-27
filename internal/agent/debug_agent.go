@@ -916,9 +916,13 @@ func (a *DebugAgent) Debug(ctx context.Context, req DebugRequest) (*DebugRespons
 		}
 		messages = append(messages, assistantMsg)
 
-		// Process tool calls
+		// Process tool calls - use intelligent fallback if no tools called
 		if len(toolCalls) == 0 {
-			return nil, fmt.Errorf("LLM did not call any tools")
+			if err := HandleNoToolCallsResponse(fullContent.String(), "debug"); err != nil {
+				return nil, err
+			}
+			// If we reach here, the response was accepted without tools (should rarely happen for debug)
+			return nil, fmt.Errorf("debug agent requires systematic analysis using tools")
 		}
 
 		for _, tc := range toolCalls {

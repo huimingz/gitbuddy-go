@@ -336,9 +336,14 @@ func (a *PRAgent) GeneratePRDescription(ctx context.Context, req PRRequest) (*PR
 		}
 		messages = append(messages, assistantMsg)
 
-		// Process tool calls
+		// Process tool calls - use intelligent fallback if no tools called
 		if len(toolCalls) == 0 {
-			return nil, fmt.Errorf("LLM did not call any tools")
+			if err := HandleNoToolCallsResponse(fullContent.String(), "pr"); err != nil {
+				return nil, err
+			}
+			// If we reach here, the response was accepted without tools
+			// For PR agent, we still need structured PR info, so we should return error
+			return nil, fmt.Errorf("PR agent requires tool usage to analyze changes and generate proper PR description")
 		}
 
 		for _, tc := range toolCalls {

@@ -400,9 +400,14 @@ func (a *CommitAgent) GenerateCommitMessage(ctx context.Context, req CommitReque
 		}
 		messages = append(messages, assistantMsg)
 
-		// Process tool calls
+		// Process tool calls - use intelligent fallback if no tools called
 		if len(toolCalls) == 0 {
-			return nil, fmt.Errorf("LLM did not call any tools")
+			if err := HandleNoToolCallsResponse(fullContent.String(), "commit"); err != nil {
+				return nil, err
+			}
+			// If we reach here, the response was accepted without tools
+			// For commit agent, we still need a commit info, so we should return error
+			return nil, fmt.Errorf("commit agent requires tool usage to generate proper commit message")
 		}
 
 		for _, tc := range toolCalls {
@@ -483,4 +488,63 @@ func (a *CommitAgent) GenerateCommitMessage(ctx context.Context, req CommitReque
 	}
 
 	return nil, fmt.Errorf("agent loop exceeded maximum iterations")
+}
+
+// ResponseAnalysis represents analysis of an LLM response
+type ResponseAnalysis struct {
+	HasToolCalls    bool
+	HasContent      bool
+	ContentLength   int
+	HasConclusion   bool
+}
+
+// AnalyzeResponse analyzes an LLM response for content and structure
+func AnalyzeResponse(content string) ResponseAnalysis {
+	analysis := ResponseAnalysis{
+		HasContent:    len(content) > 0,
+		ContentLength: len(content),
+	}
+
+	// Check for conclusion-style content
+	lowerContent := strings.ToLower(content)
+	conclusionKeywords := []string{
+		"conclusion", "summary", "result", "findings",
+		"analysis complete", "in summary", "to summarize",
+		"recommendations", "suggestion", "solution",
+	}
+
+	for _, keyword := range conclusionKeywords {
+		if strings.Contains(lowerContent, keyword) {
+			analysis.HasConclusion = true
+			break
+		}
+	}
+
+	return analysis
+}
+
+// HandleNoToolCallsResponse provides intelligent fallback when LLM doesn't call tools
+// Returns nil if we should accept the response, or an error if we should reject it
+func HandleNoToolCallsResponse(content string, agentType string) error {
+	analysis := AnalyzeResponse(content)
+
+	// If no meaningful content, always fail
+	if !analysis.HasContent || analysis.ContentLength < 50 {
+		return fmt.Errorf("LLM did not call any tools and provided no meaningful content")
+	}
+
+	// Debug agent should always use tools - it's designed for systematic analysis
+	if agentType == "debug" {
+		return fmt.Errorf("LLM did not call any tools. Debug agent requires systematic analysis using tools.")
+	}
+
+	// For other agents, check if we have substantial, conclusive content
+	if analysis.ContentLength >= 100 && analysis.HasConclusion {
+		// Log a warning but accept the response
+		log.Debug("WARNING: %s agent did not call tools but provided substantial conclusive content (length: %d)", agentType, analysis.ContentLength)
+		return nil
+	}
+
+	// Not enough content or not conclusive
+	return fmt.Errorf("LLM did not call any tools and provided insufficient analysis")
 }

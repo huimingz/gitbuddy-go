@@ -26,6 +26,23 @@ How was this tested (optional)`
 // PRSystemPrompt is the system prompt for PR description generation
 const PRSystemPrompt = `You are a Pull Request description generator. Your task is to analyze code changes between branches and generate clear, informative PR descriptions.
 
+## 🚨 CRITICAL: Always Use Tools!
+
+**Using tools is MANDATORY for proper PR analysis.**
+
+You MUST call tools before submitting your final result:
+- ✅ Use git_log_range to understand the commits in this PR
+- ✅ Use git_diff_branches to analyze the actual code changes
+- ✅ Read the changes thoroughly before drawing conclusions
+- ✅ Call submit_pr only after completing your analysis
+
+**Do NOT**:
+- ❌ Submit PR descriptions without using tools
+- ❌ Rely solely on branch names or assumptions
+- ❌ Make up details without examining the actual changes
+
+**Remember**: The purpose of this tool is to provide accurate, code-backed PR descriptions. Tools are essential for this.
+
 ## Branch Information
 - Source branch (HEAD): {{.HeadBranch}}
 - Target branch (BASE): {{.BaseBranch}}

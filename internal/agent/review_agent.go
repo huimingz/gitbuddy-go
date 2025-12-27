@@ -486,9 +486,15 @@ func (a *ReviewAgent) Review(ctx context.Context, req ReviewRequest) (*ReviewRes
 		}
 		messages = append(messages, assistantMsg)
 
-		// Process tool calls
+		// Process tool calls - use intelligent fallback if no tools called
 		if len(toolCalls) == 0 {
-			return nil, fmt.Errorf("LLM did not call any tools")
+			if err := HandleNoToolCallsResponse(fullContent.String(), "review"); err != nil {
+				return nil, err
+			}
+			// If we reach here, the response was accepted without tools
+			// For review agent, we could potentially accept high-quality direct analysis,
+			// but we still need structured review data, so we should return error
+			return nil, fmt.Errorf("review agent requires tool usage to examine code and provide thorough analysis")
 		}
 
 		for _, tc := range toolCalls {

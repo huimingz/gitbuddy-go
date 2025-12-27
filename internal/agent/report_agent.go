@@ -451,9 +451,14 @@ func (a *ReportAgent) GenerateReport(ctx context.Context, req ReportRequest) (*R
 		}
 		messages = append(messages, assistantMsg)
 
-		// Process tool calls
+		// Process tool calls - use intelligent fallback if no tools called
 		if len(toolCalls) == 0 {
-			return nil, fmt.Errorf("LLM did not call any tools")
+			if err := HandleNoToolCallsResponse(fullContent.String(), "report"); err != nil {
+				return nil, err
+			}
+			// If we reach here, the response was accepted without tools
+			// For report agent, we still need structured report data, so we should return error
+			return nil, fmt.Errorf("report agent requires tool usage to fetch commit data and generate proper reports")
 		}
 
 		for _, tc := range toolCalls {
