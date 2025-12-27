@@ -69,6 +69,7 @@ type DebugConfig struct {
 	GrepMaxFileSize        int    `yaml:"grep_max_file_size" mapstructure:"grep_max_file_size"`             // in MB
 	GrepTimeout            int    `yaml:"grep_timeout" mapstructure:"grep_timeout"`                         // in seconds
 	GrepMaxResults         int    `yaml:"grep_max_results" mapstructure:"grep_max_results"`
+	InteractiveMode        bool   `yaml:"interactive_mode" mapstructure:"interactive_mode"`                 // Enable post-execution interactive mode
 }
 
 // DefaultDebugConfig returns the default debug configuration
@@ -84,6 +85,7 @@ func DefaultDebugConfig() *DebugConfig {
 		GrepMaxFileSize:        10,    // 10 MB
 		GrepTimeout:            10,    // 10 seconds
 		GrepMaxResults:         100,   // 100 results
+		InteractiveMode:        false, // Disabled by default for backward compatibility
 	}
 }
 

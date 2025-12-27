@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/huimingz/gitbuddy-go/internal/agent"
+	"github.com/huimingz/gitbuddy-go/internal/agent/interactive"
 	"github.com/huimingz/gitbuddy-go/internal/agent/session"
 	"github.com/huimingz/gitbuddy-go/internal/config"
 	"github.com/huimingz/gitbuddy-go/internal/git"
@@ -25,6 +26,7 @@ var (
 	debugIssuesDir     string
 	debugMaxIterations int
 	debugResume        string
+	debugPostInteractive bool // Post-execution interactive mode
 )
 
 var debugCmd = &cobra.Command{
@@ -51,12 +53,13 @@ Examples:
   gitbuddy debug "API returns wrong data" --interactive
   gitbuddy debug "Performance issue" -l zh --interactive`,
 	Args: func(cmd *cobra.Command, args []string) error {
-		// If resuming, no args needed; otherwise exactly 1 arg required
+		// If resuming, no args needed
 		resumeFlag := cmd.Flag("resume").Value.String()
 		if resumeFlag != "" {
 			return cobra.NoArgs(cmd, args)
 		}
-		return cobra.ExactArgs(1)(cmd, args)
+		// Allow 0 or 1 args (0 for interactive input, 1 for traditional)
+		return cobra.RangeArgs(0, 1)(cmd, args)
 	},
 	RunE: runDebug,
 }
@@ -69,6 +72,7 @@ func init() {
 	debugCmd.Flags().StringVar(&debugIssuesDir, "issues-dir", "./issues", "Directory to save debug reports")
 	debugCmd.Flags().IntVar(&debugMaxIterations, "max-iterations", 0, "Maximum number of agent iterations (0 = use config default)")
 	debugCmd.Flags().StringVar(&debugResume, "resume", "", "Resume from a previous session (session ID)")
+	debugCmd.Flags().BoolVar(&debugPostInteractive, "post-interactive", false, "Enable post-execution interactive mode for follow-up questions and report modifications")
 
 	rootCmd.AddCommand(debugCmd)
 }
@@ -81,6 +85,31 @@ func runDebug(cmd *cobra.Command, args []string) error {
 	if debugResume != "" {
 		// When resuming, issue will be loaded from session
 		issue = "Resuming from session"
+	} else if len(args) == 0 {
+		// No arguments provided, prompt for interactive input
+		prompt := &ui.MultilinePrompt{
+			Prompt: "Please describe the issue you want to debug:",
+			Hint:   "You can enter multiple lines. Press Ctrl+D when finished.",
+			Examples: []string{
+				"Login fails with 500 error",
+				"Database connection timeout in production",
+				"Memory leak in background worker",
+				"Test TestUserAuth is failing",
+			},
+		}
+
+		var err error
+		issue, err = prompt.Show(os.Stdin, os.Stdout)
+		if err != nil {
+			if err == ui.ErrEmptyInput {
+				return fmt.Errorf("issue description cannot be empty")
+			}
+			if err == ui.ErrInterrupted {
+				fmt.Fprintln(os.Stderr, "\nDebug session cancelled.")
+				return nil
+			}
+			return fmt.Errorf("failed to read issue description: %w", err)
+		}
 	} else {
 		issue = args[0]
 		if issue == "" {
@@ -289,6 +318,28 @@ func runDebug(cmd *cobra.Command, args []string) error {
 		TotalTokens:      response.TotalTokens,
 	}
 	_ = printer.PrintStats(stats)
+
+	// Check if post-execution interactive mode is enabled
+	postInteractiveEnabled := debugPostInteractive || debugCfg.InteractiveMode
+	if postInteractiveEnabled {
+		fmt.Println() // Add spacing
+		_ = printer.PrintInfo("Starting post-execution interactive mode...")
+
+		// Create and start interactive session
+		interactiveSession := interactive.NewInteractiveSession(workDir)
+		interactiveSession.SetReportContent(response.Report)
+		interactiveSession.SetLLMProvider(provider) // Enable AI-powered question answering
+
+		// Start interactive session with context cancellation
+		if err := interactiveSession.Start(ctx, os.Stdin, os.Stdout); err != nil {
+			if ctx.Err() == context.Canceled {
+				_ = printer.PrintInfo("Interactive session cancelled by user")
+			} else {
+				log.Debug("Interactive session error: %v", err)
+				_ = printer.PrintError(fmt.Sprintf("Interactive session error: %v", err))
+			}
+		}
+	}
 
 	return nil
 }
