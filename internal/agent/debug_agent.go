@@ -571,9 +571,10 @@ func (a *DebugAgent) Debug(ctx context.Context, req DebugRequest) (*DebugRespons
 			Name: "request_feedback",
 			Desc: requestFeedbackTool.Description(),
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-				"question": {Type: schema.String, Desc: "The question to ask the user - be specific and clear", Required: true},
-				"options":  {Type: schema.Array, Desc: "List of 2-4 options for the user to choose from", Required: true},
-				"context":  {Type: schema.String, Desc: "Current analysis state and why you need input", Required: false},
+				"title":   {Type: schema.String, Desc: "Question title - concise summary of what you're asking", Required: true},
+				"content": {Type: schema.String, Desc: "Question content - detailed background, current analysis state, or information the user needs to know", Required: true},
+				"prompt":  {Type: schema.String, Desc: "Prompt text - guide the user on how to answer (e.g., 'Please select an option', 'Please enter the file path', 'Please describe the error scenario')", Required: true},
+				"options": {Type: schema.Array, Desc: "Options list (optional) - if provided, user selects from options; if not provided, user enters free text. For choice questions, at least 2 options are required", Required: false},
 			}),
 		})
 

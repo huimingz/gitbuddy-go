@@ -33,40 +33,77 @@ func TestRequestFeedbackTool_Execute(t *testing.T) {
 		name          string
 		params        *RequestFeedbackParams
 		userInput     string
+		wantResponse  string
 		wantOptionIdx int
+		wantIsChoice  bool
 		wantErr       bool
 		errMsg        string
 	}{
 		{
 			name: "select first option",
 			params: &RequestFeedbackParams{
-				Question: "Which path to investigate?",
-				Options:  []string{"Path A", "Path B", "Path C"},
-				Context:  "Found multiple issues",
+				Title:   "调查路径选择",
+				Content: "发现了多个问题",
+				Prompt:  "请选择要调查的路径",
+				Options: []string{"Path A", "Path B", "Path C"},
 			},
 			userInput:     "1\n",
+			wantResponse:  "Path A",
 			wantOptionIdx: 0,
+			wantIsChoice:  true,
 			wantErr:       false,
 		},
 		{
 			name: "select second option",
 			params: &RequestFeedbackParams{
-				Question: "Which path to investigate?",
-				Options:  []string{"Path A", "Path B"},
+				Title:   "调查路径选择",
+				Content: "需要选择调查方向",
+				Prompt:  "请选择",
+				Options: []string{"Path A", "Path B"},
 			},
 			userInput:     "2\n",
+			wantResponse:  "Path B",
 			wantOptionIdx: 1,
+			wantIsChoice:  true,
 			wantErr:       false,
 		},
 		{
 			name: "use default (empty input)",
 			params: &RequestFeedbackParams{
-				Question: "Choose direction:",
-				Options:  []string{"Option 1", "Option 2"},
+				Title:   "方向选择",
+				Content: "需要选择方向",
+				Prompt:  "请选择方向",
+				Options: []string{"Option 1", "Option 2"},
 			},
 			userInput:     "\n",
+			wantResponse:  "Option 1",
 			wantOptionIdx: 0,
+			wantIsChoice:  true,
 			wantErr:       false,
+		},
+		{
+			name: "open-ended question with text input",
+			params: &RequestFeedbackParams{
+				Title:   "日志文件路径",
+				Content: "需要查看日志文件",
+				Prompt:  "请输入日志文件路径",
+			},
+			userInput:    "/var/log/app.log\n",
+			wantResponse: "/var/log/app.log",
+			wantIsChoice: false,
+			wantErr:      false,
+		},
+		{
+			name: "open-ended question with empty input",
+			params: &RequestFeedbackParams{
+				Title:   "错误描述",
+				Content: "需要了解错误详情",
+				Prompt:  "请描述错误",
+			},
+			userInput:    "\n",
+			wantResponse: "",
+			wantIsChoice: false,
+			wantErr:      false,
 		},
 		{
 			name:      "nil params",
@@ -76,30 +113,48 @@ func TestRequestFeedbackTool_Execute(t *testing.T) {
 			errMsg:    "params is required",
 		},
 		{
-			name: "empty question",
+			name: "empty title",
 			params: &RequestFeedbackParams{
-				Question: "",
-				Options:  []string{"Option 1", "Option 2"},
+				Title:   "",
+				Content: "Some content",
+				Prompt:  "Please answer",
+				Options: []string{"Option 1", "Option 2"},
 			},
 			userInput: "1\n",
 			wantErr:   true,
-			errMsg:    "question is required",
+			errMsg:    "title is required",
 		},
 		{
-			name: "insufficient options",
+			name: "empty content",
 			params: &RequestFeedbackParams{
-				Question: "Choose:",
-				Options:  []string{"Only one"},
+				Title:   "Title",
+				Content: "",
+				Prompt:  "Please answer",
+				Options: []string{"Option 1", "Option 2"},
 			},
 			userInput: "1\n",
 			wantErr:   true,
-			errMsg:    "at least 2 options are required",
+			errMsg:    "content is required",
 		},
 		{
-			name: "no options",
+			name: "empty prompt",
 			params: &RequestFeedbackParams{
-				Question: "Choose:",
-				Options:  []string{},
+				Title:   "Title",
+				Content: "Content",
+				Prompt:  "",
+				Options: []string{"Option 1", "Option 2"},
+			},
+			userInput: "1\n",
+			wantErr:   true,
+			errMsg:    "prompt is required",
+		},
+		{
+			name: "insufficient options for choice question",
+			params: &RequestFeedbackParams{
+				Title:   "Choose",
+				Content: "Need to choose",
+				Prompt:  "Select one",
+				Options: []string{"Only one"},
 			},
 			userInput: "1\n",
 			wantErr:   true,
@@ -134,43 +189,61 @@ func TestRequestFeedbackTool_Execute(t *testing.T) {
 				t.Fatalf("failed to parse response JSON: %v", err)
 			}
 
-			// Check selected option
-			selectedOption, ok := response["selected_option"].(string)
+			// Check user response
+			userResponse, ok := response["user_response"].(string)
 			if !ok {
-				t.Fatal("response should contain 'selected_option' as string")
+				t.Fatal("response should contain 'user_response' as string")
 			}
 
-			expectedOption := tt.params.Options[tt.wantOptionIdx]
-			if selectedOption != expectedOption {
-				t.Errorf("expected selected_option '%s', got '%s'", expectedOption, selectedOption)
+			if userResponse != tt.wantResponse {
+				t.Errorf("expected user_response '%s', got '%s'", tt.wantResponse, userResponse)
 			}
 
-			// Check selected index
-			selectedIndex, ok := response["selected_index"].(float64)
+			// Check is_choice flag
+			isChoice, ok := response["is_choice"].(bool)
 			if !ok {
-				t.Fatal("response should contain 'selected_index' as number")
+				t.Fatal("response should contain 'is_choice' as bool")
 			}
 
-			if int(selectedIndex) != tt.wantOptionIdx {
-				t.Errorf("expected selected_index %d, got %d", tt.wantOptionIdx, int(selectedIndex))
+			if isChoice != tt.wantIsChoice {
+				t.Errorf("expected is_choice %v, got %v", tt.wantIsChoice, isChoice)
 			}
 
-			// Check output contains question
-			outputStr := output.String()
-			if !strings.Contains(outputStr, tt.params.Question) {
-				t.Error("output should contain the question")
-			}
+			// Check selected index for choice questions
+			if tt.wantIsChoice {
+				selectedIndex, ok := response["selected_index"].(float64)
+				if !ok {
+					t.Fatal("response should contain 'selected_index' as number for choice questions")
+				}
 
-			// Check output contains options
-			for _, option := range tt.params.Options {
-				if !strings.Contains(outputStr, option) {
-					t.Errorf("output should contain option '%s'", option)
+				if int(selectedIndex) != tt.wantOptionIdx {
+					t.Errorf("expected selected_index %d, got %d", tt.wantOptionIdx, int(selectedIndex))
 				}
 			}
 
-			// Check output contains context if provided
-			if tt.params.Context != "" && !strings.Contains(outputStr, tt.params.Context) {
-				t.Error("output should contain the context")
+			// Check output contains title
+			outputStr := output.String()
+			if !strings.Contains(outputStr, tt.params.Title) {
+				t.Error("output should contain the title")
+			}
+
+			// Check output contains content
+			if !strings.Contains(outputStr, tt.params.Content) {
+				t.Error("output should contain the content")
+			}
+
+			// Check output contains prompt
+			if !strings.Contains(outputStr, tt.params.Prompt) {
+				t.Error("output should contain the prompt")
+			}
+
+			// Check output contains options for choice questions
+			if len(tt.params.Options) > 0 {
+				for _, option := range tt.params.Options {
+					if !strings.Contains(outputStr, option) {
+						t.Errorf("output should contain option '%s'", option)
+					}
+				}
 			}
 		})
 	}
@@ -185,8 +258,10 @@ func TestRequestFeedbackTool_Execute_InvalidInput(t *testing.T) {
 
 	tool := NewRequestFeedbackTool(input, output)
 	params := &RequestFeedbackParams{
-		Question: "Choose:",
-		Options:  []string{"Option 1", "Option 2"},
+		Title:   "选择",
+		Content: "需要做出选择",
+		Prompt:  "请选择一个选项",
+		Options: []string{"Option 1", "Option 2"},
 	}
 
 	result, err := tool.Execute(ctx, params)
