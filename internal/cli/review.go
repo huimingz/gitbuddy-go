@@ -4,9 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/huimingz/gitbuddy-go/internal/agent"
@@ -177,31 +175,25 @@ func runReview(cmd *cobra.Command, args []string) error {
 		WorkDir:         workDir,
 		MaxLinesPerRead: reviewCfg.MaxLinesPerRead,
 		RetryConfig:     retryConfig,
+		SessionManager:  sessionMgr,
 	})
 
 	// Setup context with cancellation for Ctrl+C handling
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// Setup signal handling for Ctrl+C
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-
+	// Setup session interrupt handler
 	var currentSessionID string
-	go func() {
-		<-sigChan
-		fmt.Println("\n\n⚠️  Received interrupt signal. Saving session...")
-		cancel()
-
-		// Give some time for graceful shutdown
-		time.Sleep(500 * time.Millisecond)
-
-		if currentSessionID != "" && sessionConfig.AutoSave {
-			fmt.Printf("✓ Session saved: %s\n", currentSessionID)
-			fmt.Printf("  Resume with: gitbuddy review --resume %s\n", currentSessionID)
-		}
-		os.Exit(130) // Standard exit code for SIGINT
-	}()
+	interruptHandler := NewSessionInterruptHandler(
+		sessionMgr,
+		sessionConfig,
+		&currentSessionID,
+		"review",
+		cancel,
+		printer,
+	)
+	interruptHandler.Start()
+	defer interruptHandler.Stop()
 
 	// Check if resuming from a previous session
 	var sess *session.Session

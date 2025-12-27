@@ -8,6 +8,7 @@ import (
 	"io"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/cloudwego/eino/schema"
 
@@ -89,6 +90,7 @@ type ReviewAgentOptions struct {
 	WorkDir         string
 	MaxLinesPerRead int
 	RetryConfig     llm.RetryConfig
+	SessionManager  *session.Manager
 }
 
 // ReviewAgent performs code review using LLM
@@ -296,6 +298,52 @@ func (a *ReviewAgent) Review(ctx context.Context, req ReviewRequest) (*ReviewRes
 	var promptTokens, completionTokens, totalTokens int
 	maxIterations := 15 // Allow more iterations for thorough review
 
+	// Initialize session management
+	var currentSession *session.Session
+	var sessionID string
+
+	if req.Session != nil {
+		// Resume from existing session
+		currentSession = req.Session
+		sessionID = currentSession.ID
+
+		// Use messages from session if available
+		if len(currentSession.Messages) > 0 {
+			messages = currentSession.Messages
+			printProgress(fmt.Sprintf("Restored %d messages from session", len(messages)))
+		}
+
+		promptTokens = currentSession.TokenUsage.PromptTokens
+		completionTokens = currentSession.TokenUsage.CompletionTokens
+		totalTokens = currentSession.TokenUsage.TotalTokens
+
+		printProgress(fmt.Sprintf("Resumed session %s", sessionID))
+	} else {
+		// Create new session
+		sessionID = session.GenerateSessionID("review")
+		currentSession = &session.Session{
+			ID:             sessionID,
+			AgentType:      "review",
+			CreatedAt:      time.Now(),
+			UpdatedAt:      time.Now(),
+			Messages:       make([]*schema.Message, 0),
+			IterationCount: 0,
+			MaxIterations:  maxIterations,
+			TokenUsage:     session.TokenUsage{},
+			Metadata:       make(map[string]string),
+		}
+
+		// Store request as JSON
+		reqBytes, err := json.Marshal(req)
+		if err != nil {
+			log.Debug("Failed to marshal review request: %v", err)
+		} else {
+			currentSession.Request = reqBytes
+		}
+
+		printProgress(fmt.Sprintf("Created new session %s", sessionID))
+	}
+
 	// Agent loop
 	for i := 0; i < maxIterations; i++ {
 		printProgress(fmt.Sprintf("Agent iteration %d...", i+1))
@@ -422,9 +470,29 @@ func (a *ReviewAgent) Review(ctx context.Context, req ReviewRequest) (*ReviewRes
 
 				printSuccess("Code review completed successfully")
 
+				// Save final session state
+				if a.opts.SessionManager != nil && currentSession != nil {
+					currentSession.Messages = messages
+					currentSession.IterationCount = i + 1
+					currentSession.MaxIterations = maxIterations
+					currentSession.TokenUsage = session.TokenUsage{
+						PromptTokens:     promptTokens,
+						CompletionTokens: completionTokens,
+						TotalTokens:      totalTokens,
+					}
+
+					// Save final session
+					if err := a.opts.SessionManager.Save(currentSession); err != nil {
+						log.Debug("Failed to save final session: %v", err)
+					} else {
+						log.Debug("Final session %s saved", sessionID)
+					}
+				}
+
 				return &ReviewResponse{
 					Issues:           filteredIssues,
 					Summary:          params.Summary,
+					SessionID:        sessionID,
 					PromptTokens:     promptTokens,
 					CompletionTokens: completionTokens,
 					TotalTokens:      totalTokens,

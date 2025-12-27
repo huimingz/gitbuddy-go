@@ -4,9 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/huimingz/gitbuddy-go/internal/agent"
@@ -173,31 +171,25 @@ func runDebug(cmd *cobra.Command, args []string) error {
 		IssuesDir:       issuesDir,
 		MaxLinesPerRead: debugCfg.MaxLinesPerRead,
 		RetryConfig:     retryConfig,
+		SessionManager:  sessionMgr,
 	})
 
 	// Setup context with cancellation for Ctrl+C handling
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// Setup signal handling for Ctrl+C
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-
+	// Setup session interrupt handler
 	var currentSessionID string
-	go func() {
-		<-sigChan
-		fmt.Println("\n\n⚠️  Received interrupt signal. Saving session...")
-		cancel()
-
-		// Give some time for graceful shutdown
-		time.Sleep(500 * time.Millisecond)
-
-		if currentSessionID != "" && sessionConfig.AutoSave {
-			fmt.Printf("✓ Session saved: %s\n", currentSessionID)
-			fmt.Printf("  Resume with: gitbuddy debug --resume %s\n", currentSessionID)
-		}
-		os.Exit(130) // Standard exit code for SIGINT
-	}()
+	interruptHandler := NewSessionInterruptHandler(
+		sessionMgr,
+		sessionConfig,
+		&currentSessionID,
+		"debug",
+		cancel,
+		printer,
+	)
+	interruptHandler.Start()
+	defer interruptHandler.Stop()
 
 	// Check if resuming from a previous session
 	var sess *session.Session
@@ -214,8 +206,10 @@ func runDebug(cmd *cobra.Command, args []string) error {
 
 		_ = printer.PrintSuccess(fmt.Sprintf("Session loaded (iterations: %d/%d)", sess.IterationCount, sess.MaxIterations))
 	} else {
-		// Print initial indicator
+		// Generate session ID early so interrupt handler can access it
+		currentSessionID = session.GenerateSessionID("debug")
 		_ = printer.PrintThinking("Starting debugging session...")
+		_ = printer.PrintInfo(fmt.Sprintf("Session ID: %s", currentSessionID))
 	}
 
 	// Perform debugging
@@ -234,6 +228,7 @@ func runDebug(cmd *cobra.Command, args []string) error {
 		CompressionKeepRecent:  debugCfg.CompressionKeepRecent,
 		ShowCompressionSummary: debugCfg.ShowCompressionSummary,
 		Session:                sess,
+		PreGeneratedSessionID:  currentSessionID, // Pass the pre-generated session ID
 	}
 
 	response, err := debugAgent.Debug(ctx, req)

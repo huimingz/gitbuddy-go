@@ -43,6 +43,7 @@ type DebugRequest struct {
 	ShowCompressionSummary bool             // Show compression summary to user
 	MessageModifier        MessageModifier  // Optional message modifier function
 	Session                *session.Session // Optional session to resume from
+	PreGeneratedSessionID  string           // Optional pre-generated session ID
 }
 
 // DebugResponse contains the result of debugging
@@ -68,6 +69,7 @@ type DebugAgentOptions struct {
 	IssuesDir       string
 	MaxLinesPerRead int
 	RetryConfig     llm.RetryConfig
+	SessionManager  *session.Manager
 }
 
 // DebugPhase represents the current phase of the debugging process
@@ -659,8 +661,69 @@ func (a *DebugAgent) Debug(ctx context.Context, req DebugRequest) (*DebugRespons
 		)
 	}
 
+	// Initialize session management
+	var currentSession *session.Session
+	var sessionID string
+	var iterationCount int
+
+	if req.Session != nil {
+		// Resume from existing session
+		currentSession = req.Session
+		sessionID = currentSession.ID
+
+		// Restore execution plan and messages from session if available
+		if len(currentSession.ExecutionPlan) > 0 {
+			if err := json.Unmarshal(currentSession.ExecutionPlan, executionPlan); err != nil {
+				log.Debug("Failed to restore execution plan from session: %v", err)
+			} else {
+				printProgress("Restored execution plan from session")
+			}
+		}
+
+		// Use messages from session if available
+		if len(currentSession.Messages) > 0 {
+			messages = currentSession.Messages
+			printProgress(fmt.Sprintf("Restored %d messages from session", len(messages)))
+		}
+
+		iterationCount = currentSession.IterationCount
+		promptTokens = currentSession.TokenUsage.PromptTokens
+		completionTokens = currentSession.TokenUsage.CompletionTokens
+		totalTokens = currentSession.TokenUsage.TotalTokens
+
+		printProgress(fmt.Sprintf("Resumed session %s at iteration %d", sessionID, iterationCount))
+	} else {
+		// Create new session
+		if req.PreGeneratedSessionID != "" {
+			sessionID = req.PreGeneratedSessionID
+		} else {
+			sessionID = session.GenerateSessionID("debug")
+		}
+		currentSession = &session.Session{
+			ID:             sessionID,
+			AgentType:      "debug",
+			CreatedAt:      time.Now(),
+			UpdatedAt:      time.Now(),
+			Messages:       make([]*schema.Message, 0),
+			IterationCount: 0,
+			MaxIterations:  maxIterations,
+			TokenUsage:     session.TokenUsage{},
+			Metadata:       make(map[string]string),
+		}
+
+		// Store request as JSON
+		reqBytes, err := json.Marshal(req)
+		if err != nil {
+			log.Debug("Failed to marshal debug request: %v", err)
+		} else {
+			currentSession.Request = reqBytes
+		}
+
+		printProgress(fmt.Sprintf("Created new session %s", sessionID))
+		iterationCount = 0
+	}
+
 	// Agent loop
-	iterationCount := 0
 	lastPlanSnapshot := executionPlan.Clone().(*ExecutionPlan)
 
 	for {
@@ -836,9 +899,45 @@ func (a *DebugAgent) Debug(ctx context.Context, req DebugRequest) (*DebugRespons
 
 				printSuccess("Debugging session completed successfully")
 
+				// Save final session state
+				if a.opts.SessionManager != nil && currentSession != nil {
+					currentSession.Messages = messages
+					currentSession.IterationCount = iterationCount
+					currentSession.MaxIterations = maxIterations
+					currentSession.TokenUsage = session.TokenUsage{
+						PromptTokens:     promptTokens,
+						CompletionTokens: completionTokens,
+						TotalTokens:      totalTokens,
+					}
+
+					// Store execution plan
+					planBytes, err := json.Marshal(executionPlan)
+					if err != nil {
+						log.Debug("Failed to marshal execution plan: %v", err)
+					} else {
+						currentSession.ExecutionPlan = planBytes
+					}
+
+					// Store phase history
+					phaseHistoryBytes, err := json.Marshal(executionPlan.PhaseHistory)
+					if err != nil {
+						log.Debug("Failed to marshal phase history: %v", err)
+					} else {
+						currentSession.PhaseHistory = phaseHistoryBytes
+					}
+
+					// Save final session
+					if err := a.opts.SessionManager.Save(currentSession); err != nil {
+						log.Debug("Failed to save final session: %v", err)
+					} else {
+						log.Debug("Final session %s saved", sessionID)
+					}
+				}
+
 				return &DebugResponse{
 					Report:           params.Content,
 					FilePath:         reportResult.FilePath,
+					SessionID:        sessionID,
 					PromptTokens:     promptTokens,
 					CompletionTokens: completionTokens,
 					TotalTokens:      totalTokens,
@@ -990,6 +1089,41 @@ func (a *DebugAgent) Debug(ctx context.Context, req DebugRequest) (*DebugRespons
 			// Optionally show summary to user
 			if req.ShowCompressionSummary && summary != "" {
 				printInfo(fmt.Sprintf("\n📝 Compression Summary:\n%s\n", summary))
+			}
+		}
+
+		// Update session with current state periodically (every few iterations)
+		if a.opts.SessionManager != nil && currentSession != nil && iterationCount%3 == 0 {
+			currentSession.Messages = messages
+			currentSession.IterationCount = iterationCount
+			currentSession.MaxIterations = maxIterations
+			currentSession.TokenUsage = session.TokenUsage{
+				PromptTokens:     promptTokens,
+				CompletionTokens: completionTokens,
+				TotalTokens:      totalTokens,
+			}
+
+			// Store execution plan
+			planBytes, err := json.Marshal(executionPlan)
+			if err != nil {
+				log.Debug("Failed to marshal execution plan: %v", err)
+			} else {
+				currentSession.ExecutionPlan = planBytes
+			}
+
+			// Store phase history
+			phaseHistoryBytes, err := json.Marshal(executionPlan.PhaseHistory)
+			if err != nil {
+				log.Debug("Failed to marshal phase history: %v", err)
+			} else {
+				currentSession.PhaseHistory = phaseHistoryBytes
+			}
+
+			// Save session
+			if err := a.opts.SessionManager.Save(currentSession); err != nil {
+				log.Debug("Failed to save session: %v", err)
+			} else {
+				log.Debug("Session %s saved at iteration %d", sessionID, iterationCount)
 			}
 		}
 	}
