@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chzyer/readline"
+	"github.com/c-bata/go-prompt"
 	"github.com/cloudwego/eino/schema"
 	"github.com/huimingz/gitbuddy-go/internal/llm"
 )
@@ -39,6 +39,7 @@ type InteractiveSession struct {
 	reportContent    string
 	commandHistory   []CommandHistory
 	llmProvider      llm.Provider // LLM provider for question answering
+	ctx              context.Context // Context for cancellation
 }
 
 // NewInteractiveSession creates a new interactive session
@@ -84,69 +85,251 @@ func (s *InteractiveSession) GetCommandHistory() []CommandHistory {
 // Start begins the interactive session loop
 func (s *InteractiveSession) Start(ctx context.Context, input io.Reader, output io.Writer) error {
 	s.isRunning = true
+	s.ctx = ctx
 	defer func() { s.isRunning = false }()
 
 	// Display welcome message
 	s.displayWelcome(output)
 
-	// Check if we can use readline (only for stdin/stdout)
+	// Check if we can use go-prompt (only for stdin/stdout in terminal)
 	if input == os.Stdin && output == os.Stdout {
-		return s.startWithReadline(ctx)
+		return s.startWithGoPrompt(ctx)
 	}
 
 	// Fallback to scanner for tests and non-terminal usage
 	return s.startWithScanner(ctx, input, output)
 }
 
-// startWithReadline uses readline for better terminal experience (Chinese input, arrow keys, history)
-func (s *InteractiveSession) startWithReadline(ctx context.Context) error {
-	// Configure readline
-	rl, err := readline.NewEx(&readline.Config{
-		Prompt:            "gitbuddy> ",
-		HistoryFile:       ".gitbuddy_history",
-		InterruptPrompt:   "^C",
-		EOFPrompt:         "exit",
-		HistorySearchFold: true, // Enable fuzzy search in history
-	})
+// startWithGoPrompt uses go-prompt for excellent terminal experience with proper Chinese character handling
+func (s *InteractiveSession) startWithGoPrompt(ctx context.Context) error {
+	// Create prompt with auto-completion and history
+	p := prompt.New(
+		s.executor,     // Function to handle user input
+		s.completer,    // Function for auto-completion
+		prompt.OptionTitle("GitBuddy Interactive Debug Session"),
+		prompt.OptionPrefix("gitbuddy> "),
+		prompt.OptionHistory(s.getHistoryStrings()), // Load command history
+		prompt.OptionLivePrefix(s.livePrefix),       // Dynamic prefix
+		prompt.OptionInputTextColor(prompt.DefaultColor),
+		prompt.OptionPrefixTextColor(prompt.Blue),
+		prompt.OptionPreviewSuggestionTextColor(prompt.Green),
+		prompt.OptionSelectedSuggestionBGColor(prompt.LightGray),
+		prompt.OptionSuggestionBGColor(prompt.DarkGray),
+		prompt.OptionMaxSuggestion(10),
+	)
+
+	// Start the prompt - this blocks until exit
+	p.Run()
+
+	return nil
+}
+
+// executor handles user input from go-prompt
+func (s *InteractiveSession) executor(input string) {
+	input = strings.TrimSpace(input)
+
+	// Check for exit commands first
+	if input == "exit" || input == "quit" || input == "q" {
+		s.isRunning = false
+		fmt.Println("Goodbye! Thank you for using GitBuddy interactive mode.")
+		return
+	}
+
+	// Handle empty input
+	if input == "" {
+		return
+	}
+
+	// Process the command
+	if err := s.processCommandFromPrompt(input); err != nil {
+		fmt.Printf("Error: %v\n", err)
+	}
+
+	fmt.Println() // Add spacing for readability
+}
+
+// completer provides auto-completion suggestions
+func (s *InteractiveSession) completer(d prompt.Document) []prompt.Suggest {
+	suggestions := []prompt.Suggest{
+		{Text: "help", Description: "Show help information"},
+		{Text: "exit", Description: "Exit interactive mode"},
+		{Text: "quit", Description: "Exit interactive mode"},
+		{Text: "modify", Description: "Modify the debug report"},
+		{Text: "What caused this error?", Description: "Ask about the error cause"},
+		{Text: "How can I fix this?", Description: "Ask for solution suggestions"},
+		{Text: "Explain the issue in detail", Description: "Request detailed explanation"},
+		{Text: "Is this a performance issue?", Description: "Ask about performance"},
+		{Text: "How critical is this bug?", Description: "Ask about severity"},
+		{Text: "modify add performance analysis", Description: "Add performance analysis to report"},
+		{Text: "modify include code examples", Description: "Add code examples to report"},
+		{Text: "modify focus on security", Description: "Focus on security aspects"},
+	}
+
+	// Return filtered suggestions based on user input
+	return prompt.FilterHasPrefix(suggestions, d.GetWordBeforeCursor(), true)
+}
+
+// getHistoryStrings converts command history to string slice for go-prompt
+func (s *InteractiveSession) getHistoryStrings() []string {
+	var history []string
+	for _, cmd := range s.commandHistory {
+		if cmd.Command != "" {
+			history = append(history, cmd.Command)
+		}
+	}
+	return history
+}
+
+// livePrefix provides dynamic prefix based on session state
+func (s *InteractiveSession) livePrefix() (string, bool) {
+	if !s.isRunning {
+		return "gitbuddy> ", false
+	}
+
+	// Could add context-aware prefixes here
+	// For example, different colors based on LLM provider status
+	if s.llmProvider != nil {
+		return "gitbuddy🤖> ", true // AI mode indicator
+	}
+
+	return "gitbuddy> ", true
+}
+
+// processCommandFromPrompt processes commands from go-prompt
+func (s *InteractiveSession) processCommandFromPrompt(input string) error {
+	// Parse command
+	cmdType, args, err := s.ParseCommand(input)
 	if err != nil {
-		return fmt.Errorf("failed to create readline: %w", err)
+		return err
 	}
-	defer rl.Close()
 
-	for s.isRunning {
-		// Check for context cancellation
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
+	// Record command in history
+	s.addToHistory(input, cmdType)
+
+	// Execute command
+	switch cmdType {
+	case CommandTypeEmpty:
+		return s.handleEmpty(os.Stdout)
+	case CommandTypeHelp:
+		return s.handleHelp(os.Stdout)
+	case CommandTypeExit:
+		s.isRunning = false
+		fmt.Println("Goodbye! Thank you for using GitBuddy interactive mode.")
+		return nil
+	case CommandTypeModify:
+		return s.handleModifyFromPrompt(args)
+	case CommandTypeQuestion:
+		return s.handleQuestion(s.ctx, input, os.Stdout)
+	default:
+		return fmt.Errorf("unknown command type: %d", cmdType)
+	}
+}
+
+// handleModifyFromPrompt handles modify commands from go-prompt
+func (s *InteractiveSession) handleModifyFromPrompt(args string) error {
+	var modificationRequest string
+
+	if args != "" {
+		// Single line modification request
+		modificationRequest = args
+	} else {
+		// For multiline input, we'll use a simple input prompt
+		fmt.Println("Enter your modification request (press Enter when finished):")
+		fmt.Print("  > ")
+
+		// Read a single line for now - could be enhanced for true multiline
+		var input string
+		fmt.Scanln(&input)
+		modificationRequest = input
+	}
+
+	// Process the modification request (reuse existing logic)
+	return s.handleModifyRequest(s.ctx, modificationRequest, os.Stdout)
+}
+
+// handleModifyRequest handles the core modification logic (shared by different input methods)
+func (s *InteractiveSession) handleModifyRequest(ctx context.Context, modificationRequest string, output io.Writer) error {
+	// Display the request, replacing newlines with spaces for cleaner output
+	displayRequest := strings.ReplaceAll(modificationRequest, "\n", " ")
+	fmt.Fprintf(output, "Report modification request received: %s\n", displayRequest)
+
+	// Check if LLM provider is available
+	if s.llmProvider == nil {
+		fmt.Fprintln(output, "Processing modification request...")
+		fmt.Fprintln(output, "Note: LLM provider not configured. Unable to modify report with AI.")
+		fmt.Fprintln(output, "Please configure an LLM provider to enable AI-powered report modifications.")
+		return nil
+	}
+
+	fmt.Fprintln(output, "Processing modification request with AI...")
+	fmt.Fprintln(output)
+
+	// Create chat model
+	chatModel, err := s.llmProvider.CreateChatModel(ctx)
+	if err != nil {
+		fmt.Fprintf(output, "Error: Failed to create chat model: %v\n", err)
+		return nil
+	}
+
+	// Build system prompt
+	systemPrompt := `You are a technical report modification assistant.
+Your task is to improve and modify existing debug reports based on user requests.
+Keep the technical accuracy and formatting of the original report.
+Make the requested modifications while maintaining clarity and professionalism.
+Return the complete modified report, not just the changes.`
+
+	// Get current report content
+	currentReport := s.GetReportContent()
+	if currentReport == "" {
+		fmt.Fprintln(output, "No existing report to modify.")
+		return nil
+	}
+
+	// Build user message with context
+	userMessage := fmt.Sprintf(`Current Debug Report:
+%s
+
+Modification Request: %s
+
+Please provide the complete modified report incorporating the requested changes.`, currentReport, modificationRequest)
+
+	// Create messages
+	messages := []*schema.Message{
+		{Role: schema.System, Content: systemPrompt},
+		{Role: schema.User, Content: userMessage},
+	}
+
+	// Stream response
+	streamReader, err := chatModel.Stream(ctx, messages)
+	if err != nil {
+		fmt.Fprintf(output, "Error: %v\n", err)
+		return nil
+	}
+
+	var modifiedReport strings.Builder
+	for {
+		chunk, err := streamReader.Recv()
+		if err == io.EOF {
+			break
 		}
-
-		// Read input with readline support
-		line, err := rl.Readline()
 		if err != nil {
-			if err == readline.ErrInterrupt {
-				fmt.Println("^C")
-				continue
-			} else if err == io.EOF {
-				fmt.Println("\nGoodbye!")
-				break
-			}
-			return fmt.Errorf("readline error: %w", err)
+			streamReader.Close()
+			fmt.Fprintf(output, "Error reading response: %v\n", err)
+			return nil
 		}
 
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
+		if chunk.Content != "" {
+			modifiedReport.WriteString(chunk.Content)
+			fmt.Fprint(output, chunk.Content)
 		}
-
-		// Process command - for multiline input, we'll create a special handler
-		if err := s.ProcessCommandWithReadline(ctx, line, rl); err != nil {
-			fmt.Fprintf(os.Stdout, "Error: %v\n", err)
-		}
-
-		// Add some spacing for readability
-		fmt.Fprintln(os.Stdout)
 	}
+	streamReader.Close()
+
+	// Update the stored report content with the modified version
+	s.SetReportContent(modifiedReport.String())
+
+	fmt.Fprintln(output)
+	fmt.Fprintln(output, "✓ Report has been successfully modified and updated.")
 
 	return nil
 }
@@ -192,36 +375,6 @@ func (s *InteractiveSession) startWithScanner(ctx context.Context, input io.Read
 // ProcessCommand processes a single command input (backward compatibility)
 func (s *InteractiveSession) ProcessCommand(ctx context.Context, input string, output io.Writer) error {
 	return s.ProcessCommandWithScanner(ctx, input, output, nil)
-}
-
-// ProcessCommandWithReadline processes a command using readline for better input handling
-func (s *InteractiveSession) ProcessCommandWithReadline(ctx context.Context, input string, rl *readline.Instance) error {
-	input = strings.TrimSpace(input)
-
-	// Parse command
-	cmdType, args, err := s.ParseCommand(input)
-	if err != nil {
-		return err
-	}
-
-	// Record command in history
-	s.addToHistory(input, cmdType)
-
-	// Execute command
-	switch cmdType {
-	case CommandTypeEmpty:
-		return s.handleEmpty(os.Stdout)
-	case CommandTypeHelp:
-		return s.handleHelp(os.Stdout)
-	case CommandTypeExit:
-		return s.handleExit(os.Stdout)
-	case CommandTypeModify:
-		return s.handleModifyWithReadline(ctx, args, rl)
-	case CommandTypeQuestion:
-		return s.handleQuestion(ctx, input, os.Stdout)
-	default:
-		return fmt.Errorf("unknown command type: %d", cmdType)
-	}
 }
 
 // ProcessCommandWithScanner processes a single command input with optional scanner for multiline input
@@ -386,210 +539,8 @@ func (s *InteractiveSession) handleModifyWithScanner(ctx context.Context, args s
 		return fmt.Errorf("modify command requires arguments or multiline input")
 	}
 
-	// Display the request, replacing newlines with spaces for cleaner output
-	displayRequest := strings.ReplaceAll(modificationRequest, "\n", " ")
-	fmt.Fprintf(output, "Report modification request received: %s\n", displayRequest)
-
-	// Check if LLM provider is available
-	if s.llmProvider == nil {
-		fmt.Fprintln(output, "Processing modification request...")
-		fmt.Fprintln(output, "Note: LLM provider not configured. Unable to modify report with AI.")
-		fmt.Fprintln(output, "Please configure an LLM provider to enable AI-powered report modifications.")
-		return nil
-	}
-
-	fmt.Fprintln(output, "Processing modification request with AI...")
-	fmt.Fprintln(output)
-
-	// Create chat model
-	chatModel, err := s.llmProvider.CreateChatModel(ctx)
-	if err != nil {
-		fmt.Fprintf(output, "Error: Failed to create chat model: %v\n", err)
-		return nil
-	}
-
-	// Build system prompt
-	systemPrompt := `You are a technical report modification assistant.
-Your task is to improve and modify existing debug reports based on user requests.
-Keep the technical accuracy and formatting of the original report.
-Make the requested modifications while maintaining clarity and professionalism.
-Return the complete modified report, not just the changes.`
-
-	// Get current report content
-	currentReport := s.GetReportContent()
-	if currentReport == "" {
-		fmt.Fprintln(output, "No existing report to modify.")
-		return nil
-	}
-
-	// Build user message with context
-	userMessage := fmt.Sprintf(`Current Debug Report:
-%s
-
-Modification Request: %s
-
-Please provide the complete modified report incorporating the requested changes.`, currentReport, modificationRequest)
-
-	// Create messages
-	messages := []*schema.Message{
-		{Role: schema.System, Content: systemPrompt},
-		{Role: schema.User, Content: userMessage},
-	}
-
-	// Stream response
-	streamReader, err := chatModel.Stream(ctx, messages)
-	if err != nil {
-		fmt.Fprintf(output, "Error: %v\n", err)
-		return nil
-	}
-
-	var modifiedReport strings.Builder
-	for {
-		chunk, err := streamReader.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			streamReader.Close()
-			fmt.Fprintf(output, "Error reading response: %v\n", err)
-			return nil
-		}
-
-		if chunk.Content != "" {
-			modifiedReport.WriteString(chunk.Content)
-			fmt.Fprint(output, chunk.Content)
-		}
-	}
-	streamReader.Close()
-
-	// Update the stored report content with the modified version
-	s.SetReportContent(modifiedReport.String())
-
-	fmt.Fprintln(output)
-	fmt.Fprintln(output, "✓ Report has been successfully modified and updated.")
-
-	return nil
-}
-
-// handleModifyWithReadline handles report modification requests using readline for multiline input
-func (s *InteractiveSession) handleModifyWithReadline(ctx context.Context, args string, rl *readline.Instance) error {
-	var modificationRequest string
-
-	if args != "" {
-		// Single line modification request
-		modificationRequest = args
-	} else {
-		// Multiline modification request using readline
-		fmt.Println("Enter your modification request (end with a line containing only '.' and press Enter):")
-
-		// Temporarily change the prompt
-		rl.SetPrompt("  > ")
-		defer rl.SetPrompt("gitbuddy> ")
-
-		var lines []string
-		for {
-			line, err := rl.Readline()
-			if err != nil {
-				if err == readline.ErrInterrupt {
-					fmt.Println("\nModification cancelled.")
-					return nil
-				} else if err == io.EOF {
-					break
-				}
-				return fmt.Errorf("error reading multiline input: %w", err)
-			}
-
-			if strings.TrimSpace(line) == "." {
-				break
-			}
-			lines = append(lines, line)
-		}
-		modificationRequest = strings.Join(lines, "\n")
-	}
-
-	// Display the request, replacing newlines with spaces for cleaner output
-	displayRequest := strings.ReplaceAll(modificationRequest, "\n", " ")
-	fmt.Printf("Report modification request received: %s\n", displayRequest)
-
-	// Check if LLM provider is available
-	if s.llmProvider == nil {
-		fmt.Println("Processing modification request...")
-		fmt.Println("Note: LLM provider not configured. Unable to modify report with AI.")
-		fmt.Println("Please configure an LLM provider to enable AI-powered report modifications.")
-		return nil
-	}
-
-	fmt.Println("Processing modification request with AI...")
-	fmt.Println()
-
-	// Create chat model
-	chatModel, err := s.llmProvider.CreateChatModel(ctx)
-	if err != nil {
-		fmt.Printf("Error: Failed to create chat model: %v\n", err)
-		return nil
-	}
-
-	// Build system prompt
-	systemPrompt := `You are a technical report modification assistant.
-Your task is to improve and modify existing debug reports based on user requests.
-Keep the technical accuracy and formatting of the original report.
-Make the requested modifications while maintaining clarity and professionalism.
-Return the complete modified report, not just the changes.`
-
-	// Get current report content
-	currentReport := s.GetReportContent()
-	if currentReport == "" {
-		fmt.Println("No existing report to modify.")
-		return nil
-	}
-
-	// Build user message with context
-	userMessage := fmt.Sprintf(`Current Debug Report:
-%s
-
-Modification Request: %s
-
-Please provide the complete modified report incorporating the requested changes.`, currentReport, modificationRequest)
-
-	// Create messages
-	messages := []*schema.Message{
-		{Role: schema.System, Content: systemPrompt},
-		{Role: schema.User, Content: userMessage},
-	}
-
-	// Stream response
-	streamReader, err := chatModel.Stream(ctx, messages)
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return nil
-	}
-
-	var modifiedReport strings.Builder
-	for {
-		chunk, err := streamReader.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			streamReader.Close()
-			fmt.Printf("Error reading response: %v\n", err)
-			return nil
-		}
-
-		if chunk.Content != "" {
-			modifiedReport.WriteString(chunk.Content)
-			fmt.Print(chunk.Content)
-		}
-	}
-	streamReader.Close()
-
-	// Update the stored report content with the modified version
-	s.SetReportContent(modifiedReport.String())
-
-	fmt.Println()
-	fmt.Println("✓ Report has been successfully modified and updated.")
-
-	return nil
+	// Use the shared modification logic
+	return s.handleModifyRequest(ctx, modificationRequest, output)
 }
 
 // handleQuestion handles user questions using LLM for intelligent responses
