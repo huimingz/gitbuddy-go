@@ -66,10 +66,33 @@ type DebugAgentOptions struct {
 	MaxLinesPerRead int
 }
 
+// DebugPhase represents the current phase of the debugging process
+type DebugPhase string
+
+const (
+	PhaseProblemDefinition   DebugPhase = "problem_definition"    // 定义问题阶段
+	PhaseImpactAnalysis      DebugPhase = "impact_analysis"       // 影响范围分析
+	PhaseRootCauseHypothesis DebugPhase = "root_cause_hypothesis" // 根因假设
+	PhaseInvestigationPlan   DebugPhase = "investigation_plan"    // 制定排查计划
+	PhaseExecution           DebugPhase = "execution"             // 执行排查
+	PhaseVerification        DebugPhase = "verification"          // 验证结果
+	PhaseReporting           DebugPhase = "reporting"             // 生成报告
+)
+
 // ExecutionPlan represents a dynamic plan for the debugging process
 type ExecutionPlan struct {
-	Tasks       []PlanTask
-	LastUpdated time.Time
+	Tasks        []PlanTask
+	CurrentPhase DebugPhase
+	PhaseHistory []PhaseTransition
+	LastUpdated  time.Time
+}
+
+// PhaseTransition records when the debugging phase changes
+type PhaseTransition struct {
+	FromPhase DebugPhase
+	ToPhase   DebugPhase
+	Timestamp time.Time
+	Reason    string
 }
 
 // PlanTask represents a single task in the execution plan
@@ -84,9 +107,54 @@ type PlanTask struct {
 // NewExecutionPlan creates a new execution plan
 func NewExecutionPlan() *ExecutionPlan {
 	return &ExecutionPlan{
-		Tasks:       []PlanTask{},
-		LastUpdated: time.Now(),
+		Tasks:        []PlanTask{},
+		CurrentPhase: PhaseProblemDefinition,
+		PhaseHistory: []PhaseTransition{},
+		LastUpdated:  time.Now(),
 	}
+}
+
+// TransitionToPhase transitions to a new debugging phase
+func (p *ExecutionPlan) TransitionToPhase(newPhase string, reason string) {
+	phase := DebugPhase(newPhase)
+
+	if p.CurrentPhase == phase {
+		return
+	}
+
+	transition := PhaseTransition{
+		FromPhase: p.CurrentPhase,
+		ToPhase:   phase,
+		Timestamp: time.Now(),
+		Reason:    reason,
+	}
+
+	p.PhaseHistory = append(p.PhaseHistory, transition)
+	p.CurrentPhase = phase
+	p.LastUpdated = time.Now()
+}
+
+// GetCurrentPhase returns the current phase as a string
+func (p *ExecutionPlan) GetCurrentPhase() string {
+	return string(p.CurrentPhase)
+}
+
+// GetPhaseDescription returns a human-readable description of the current phase
+func (p *ExecutionPlan) GetPhaseDescription() string {
+	descriptions := map[DebugPhase]string{
+		PhaseProblemDefinition:   "🔍 问题定义阶段 - 明确问题的症状、影响和背景",
+		PhaseImpactAnalysis:      "📊 影响分析阶段 - 确定问题的影响范围和严重程度",
+		PhaseRootCauseHypothesis: "💡 根因假设阶段 - 基于现有信息提出可能的根本原因",
+		PhaseInvestigationPlan:   "📋 计划制定阶段 - 制定详细的排查计划",
+		PhaseExecution:           "🔧 执行排查阶段 - 执行排查计划并收集证据",
+		PhaseVerification:        "✅ 验证阶段 - 验证发现的根因和解决方案",
+		PhaseReporting:           "📝 报告生成阶段 - 整理发现并生成报告",
+	}
+
+	if desc, ok := descriptions[p.CurrentPhase]; ok {
+		return desc
+	}
+	return string(p.CurrentPhase)
 }
 
 // AddTask adds a new task to the plan
@@ -131,12 +199,18 @@ func (p *ExecutionPlan) RemoveTask(id string) bool {
 
 // GetSummary returns a formatted summary of the plan
 func (p *ExecutionPlan) GetSummary() string {
+	var summary strings.Builder
+
+	// Show current phase
+	summary.WriteString(p.GetPhaseDescription())
+	summary.WriteString("\n\n")
+
 	if len(p.Tasks) == 0 {
-		return "No execution plan yet."
+		summary.WriteString("No tasks defined yet.")
+		return summary.String()
 	}
 
-	var summary strings.Builder
-	summary.WriteString("📋 Current Execution Plan:\n")
+	summary.WriteString("📋 Current Tasks:\n")
 
 	pending := 0
 	inProgress := 0
@@ -226,8 +300,10 @@ func (p *ExecutionPlan) Clone() interface{} {
 	}
 
 	clone := &ExecutionPlan{
-		Tasks:       make([]PlanTask, len(p.Tasks)),
-		LastUpdated: p.LastUpdated,
+		Tasks:        make([]PlanTask, len(p.Tasks)),
+		CurrentPhase: p.CurrentPhase,
+		PhaseHistory: make([]PhaseTransition, len(p.PhaseHistory)),
+		LastUpdated:  p.LastUpdated,
 	}
 
 	for i, task := range p.Tasks {
@@ -242,6 +318,8 @@ func (p *ExecutionPlan) Clone() interface{} {
 			clone.Tasks[i].CompletedAt = &completedAt
 		}
 	}
+
+	copy(clone.PhaseHistory, p.PhaseHistory)
 
 	return clone
 }
@@ -389,9 +467,10 @@ func (a *DebugAgent) Debug(ctx context.Context, req DebugRequest) (*DebugRespons
 	requestFeedbackTool := tools.NewRequestFeedbackTool(a.opts.Input, a.opts.Output)
 	submitReportTool := tools.NewSubmitReportTool(issuesDir)
 
-	// Execution plan tool
+	// Execution plan and phase management tools
 	executionPlan := NewExecutionPlan()
 	updateExecutionPlanTool := tools.NewUpdateExecutionPlanTool(executionPlan)
+	transitionPhaseTool := tools.NewTransitionPhaseTool(executionPlan)
 
 	// Define tool schemas
 	toolInfos := []*schema.ToolInfo{
@@ -492,11 +571,16 @@ func (a *DebugAgent) Debug(ctx context.Context, req DebugRequest) (*DebugRespons
 			Name: "request_feedback",
 			Desc: requestFeedbackTool.Description(),
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-				"question": {Type: schema.String, Desc: "Question to ask the user", Required: true},
-				"options":  {Type: schema.Array, Desc: "Array of options for the user to choose from", Required: true},
-				"context":  {Type: schema.String, Desc: "Additional context for the question", Required: false},
+				"question": {Type: schema.String, Desc: "The question to ask the user - be specific and clear", Required: true},
+				"options":  {Type: schema.Array, Desc: "List of 2-4 options for the user to choose from", Required: true},
+				"context":  {Type: schema.String, Desc: "Current analysis state and why you need input", Required: false},
 			}),
 		})
+
+		// Print a reminder that interactive mode is enabled
+		printInfo("🎯 Interactive mode enabled - Agent can request your feedback during analysis")
+	} else {
+		printInfo("ℹ️  Non-interactive mode - Agent will work autonomously without requesting feedback")
 	}
 
 	// Add execution plan tool
@@ -508,6 +592,16 @@ func (a *DebugAgent) Debug(ctx context.Context, req DebugRequest) (*DebugRespons
 			"task_id":     {Type: schema.String, Desc: "Unique identifier for the task (required for update/remove)", Required: false},
 			"description": {Type: schema.String, Desc: "Task description (required for add)", Required: false},
 			"status":      {Type: schema.String, Desc: "Task status: pending, in_progress, completed, or skipped (required for update)", Required: false},
+		}),
+	})
+
+	// Add phase transition tool
+	toolInfos = append(toolInfos, &schema.ToolInfo{
+		Name: "transition_phase",
+		Desc: transitionPhaseTool.Description(),
+		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+			"new_phase": {Type: schema.String, Desc: "The phase to transition to", Required: true},
+			"reason":    {Type: schema.String, Desc: "Why you are transitioning to this phase", Required: true},
 		}),
 	})
 
@@ -831,6 +925,14 @@ func (a *DebugAgent) Debug(ctx context.Context, req DebugRequest) (*DebugRespons
 					result, toolErr = updateExecutionPlanTool.Execute(ctx, &params)
 				}
 
+			case "transition_phase":
+				var params tools.TransitionPhaseParams
+				if err := json.Unmarshal([]byte(tc.Function.Arguments), &params); err != nil {
+					toolErr = fmt.Errorf("invalid parameters: %w", err)
+				} else {
+					result, toolErr = transitionPhaseTool.Execute(ctx, &params)
+				}
+
 			default:
 				toolErr = fmt.Errorf("unknown tool: %s", tc.Function.Name)
 			}
@@ -852,10 +954,15 @@ func (a *DebugAgent) Debug(ctx context.Context, req DebugRequest) (*DebugRespons
 				ToolCallID: tc.ID,
 			})
 
-			// Display execution plan after each tool execution (except update_execution_plan itself)
-			if tc.Function.Name == "update_execution_plan" && toolErr == nil {
-				// Plan was updated, show the changes
-				printExecutionPlan(executionPlan)
+			// Display execution plan after certain tool executions
+			if toolErr == nil {
+				if tc.Function.Name == "update_execution_plan" {
+					// Plan was updated, show the changes
+					printExecutionPlan(executionPlan)
+				} else if tc.Function.Name == "transition_phase" {
+					// Phase transitioned, show the new phase and plan
+					printExecutionPlan(executionPlan)
+				}
 			}
 		}
 

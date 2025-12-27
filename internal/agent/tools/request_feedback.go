@@ -46,8 +46,16 @@ func (t *RequestFeedbackTool) Name() string {
 
 // Description returns the tool description
 func (t *RequestFeedbackTool) Description() string {
-	return `Request interactive feedback from the user during analysis.
-Use this tool when you need to ask the user for direction or clarification.
+	return `**IMPORTANT**: Request interactive feedback from the user during analysis.
+This is a CRITICAL tool for effective debugging - use it proactively!
+
+Use this tool EARLY and OFTEN when you need:
+- Clarification about the problem (missing error messages, reproduction steps, timing)
+- Understanding of impact scope (how many users, how often, severity)
+- Domain knowledge or business logic clarification
+- Direction when multiple investigation paths exist
+- Validation of your findings or hypotheses
+- Prioritization when you found multiple issues
 
 Parameters:
 - question (required): The question to ask the user. Should be clear and specific.
@@ -56,26 +64,22 @@ Parameters:
 
 Returns the user's selected option text.
 
-When to use this tool:
-- Multiple possible analysis directions exist and you need user input to choose
-- Uncertain about which code path to investigate
-- Need clarification about the problem scope
-- Found multiple potential root causes and need user to prioritize
+**When to use this tool (USE LIBERALLY)**:
+✅ Phase 1 (Problem Definition): Missing critical information about symptoms, timing, or scope
+✅ Phase 2 (Impact Analysis): Need to understand frequency, user impact, or severity
+✅ Phase 3 (Root Cause Hypothesis): Need domain knowledge or business logic clarification
+✅ Phase 5 (Execution): Multiple possible causes found - need prioritization
+✅ Phase 5 (Execution): Stuck after several attempts - need different perspective
+✅ Phase 6 (Verification): Need user to validate findings or confirm solution
 
-When NOT to use this tool:
-- For simple yes/no questions (just make a reasonable assumption)
-- Too frequently (avoid user fatigue - max 3-4 times per session)
-- For obvious decisions that can be inferred from context
-- When you have enough information to proceed
-
-Best practices:
+**Best practices**:
+- Ask early - don't wait until you're stuck
 - Provide 2-4 clear, distinct options
-- Make the question specific and actionable
-- Include relevant context from your analysis so far
+- Include relevant context from your analysis
 - Explain what each option means for the investigation
-- Set a reasonable default option (first option is default)
+- Use it 3-5 times per session is NORMAL and ENCOURAGED
 
-Example:
+**Example**:
 {
   "question": "I found two potential issues. Which should I investigate first?",
   "options": [
