@@ -50,7 +50,14 @@ Examples:
   gitbuddy debug "Test TestUserAuth is failing" --files "auth_test.go,auth.go"
   gitbuddy debug "API returns wrong data" --interactive
   gitbuddy debug "Performance issue" -l zh --interactive`,
-	Args: cobra.ExactArgs(1),
+	Args: func(cmd *cobra.Command, args []string) error {
+		// If resuming, no args needed; otherwise exactly 1 arg required
+		resumeFlag := cmd.Flag("resume").Value.String()
+		if resumeFlag != "" {
+			return cobra.NoArgs(cmd, args)
+		}
+		return cobra.ExactArgs(1)(cmd, args)
+	},
 	RunE: runDebug,
 }
 
@@ -70,9 +77,15 @@ func runDebug(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	startTime := time.Now()
 
-	issue := args[0]
-	if issue == "" {
-		return fmt.Errorf("issue description cannot be empty")
+	var issue string
+	if debugResume != "" {
+		// When resuming, issue will be loaded from session
+		issue = "Resuming from session"
+	} else {
+		issue = args[0]
+		if issue == "" {
+			return fmt.Errorf("issue description cannot be empty")
+		}
 	}
 
 	// Load configuration

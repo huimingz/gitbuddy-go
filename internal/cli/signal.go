@@ -65,8 +65,12 @@ func (h *SessionInterruptHandler) handleSignals() {
 	fmt.Println("Stopping agent...")
 	h.cancel()
 
-	// Give agent time to save current state and stop gracefully
-	time.Sleep(1 * time.Second)
+	// Give agent more time to save current state and stop gracefully
+	// The agent needs time to:
+	// 1. Detect context cancellation
+	// 2. Prepare session data
+	// 3. Save session to disk
+	time.Sleep(3 * time.Second)
 
 	// Setup a goroutine to listen for second interrupt signal during confirmation
 	go func() {
@@ -82,28 +86,37 @@ func (h *SessionInterruptHandler) handleSignals() {
 		}
 	}()
 
-	// Now ask user if they want to keep the saved session (agent has stopped)
-	confirmed, err := ui.ConfirmWithDefault("Session has been saved. Do you want to keep it? (Ctrl+C again to force exit)", true, os.Stdin, os.Stdout)
-	if err != nil {
-		fmt.Printf("Error reading input: %v\n", err)
-		// Default to keeping on error
-		confirmed = true
+	// Check if session was actually saved
+	sessionExists := false
+	if h.currentSession != nil && *h.currentSession != "" && h.sessionMgr != nil {
+		sessionExists = h.sessionMgr.Exists(*h.currentSession)
 	}
 
-	if confirmed {
-		if h.currentSession != nil && *h.currentSession != "" {
-			fmt.Printf("✓ Session kept: %s\n", *h.currentSession)
-			fmt.Printf("  Resume with: gitbuddy %s --resume %s\n", h.agentType, *h.currentSession)
-		} else {
-			fmt.Println("✓ Session kept")
-		}
+	// Ask user if they want to keep the session
+	var confirmed bool
+	var err error
+	if sessionExists {
+		confirmed, err = ui.ConfirmWithDefault("Agent has been stopped and session saved. Do you want to keep the saved session? (Ctrl+C again to force exit)", true, os.Stdin, os.Stdout)
 	} else {
+		fmt.Println("No session was saved (session was empty or saving failed).")
+		confirmed = false
+		err = nil
+	}
+
+	if err != nil {
+		fmt.Printf("Error reading input: %v\n", err)
+		// Default to keeping on error if session exists
+		confirmed = sessionExists
+	}
+
+	if confirmed && sessionExists {
+		fmt.Printf("✓ Session kept: %s\n", *h.currentSession)
+		fmt.Printf("  Resume with: gitbuddy %s --resume %s\n", h.agentType, *h.currentSession)
+	} else if sessionExists {
 		fmt.Println("Session discarded.")
-		// Delete the saved session file if it exists
-		if h.currentSession != nil && *h.currentSession != "" && h.sessionMgr != nil {
-			if err := h.sessionMgr.Delete(*h.currentSession); err != nil {
-				// Don't show error to user, just log it
-			}
+		// Delete the saved session file
+		if err := h.sessionMgr.Delete(*h.currentSession); err != nil {
+			// Don't show error to user, but we can log it if needed
 		}
 	}
 
