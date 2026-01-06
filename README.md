@@ -29,6 +29,7 @@ GitBuddy-Go is an AI-powered command-line tool that automates and enhances your 
 - **📝 PR Description Generator**: Creates comprehensive pull request descriptions with summary, changes, motivation, and impact analysis
 - **🔍 Code Review**: AI-powered code review that identifies bugs, security issues, performance problems, and style suggestions
 - **🐛 Issue Debugging**: Interactive AI assistant that systematically analyzes and debugs code issues
+- **💬 AI Chat Assistant**: General-purpose conversational AI with access to code and Git tools for flexible exploration
 - **📊 Development Reports**: Generates structured weekly/monthly development reports from commit history
 - **🔄 Automatic Retry**: Smart retry mechanism with exponential backoff for handling transient LLM API failures
 - **💾 Session Management**: Save and resume long-running debug/review sessions with Ctrl+C support

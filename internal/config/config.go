@@ -35,6 +35,7 @@ type Config struct {
 	PRTemplate   *PRTemplateConfig      `yaml:"pr_template" mapstructure:"pr_template"`
 	Review       *ReviewConfig          `yaml:"review" mapstructure:"review"`
 	Debug        *DebugConfig           `yaml:"debug" mapstructure:"debug"`
+	Chat         *ChatConfig            `yaml:"chat" mapstructure:"chat"`
 	Retry        *RetryConfig           `yaml:"retry" mapstructure:"retry"`
 	Session      *SessionConfig         `yaml:"session" mapstructure:"session"`
 }
@@ -69,7 +70,7 @@ type DebugConfig struct {
 	GrepMaxFileSize        int    `yaml:"grep_max_file_size" mapstructure:"grep_max_file_size"`             // in MB
 	GrepTimeout            int    `yaml:"grep_timeout" mapstructure:"grep_timeout"`                         // in seconds
 	GrepMaxResults         int    `yaml:"grep_max_results" mapstructure:"grep_max_results"`
-	InteractiveMode        bool   `yaml:"interactive_mode" mapstructure:"interactive_mode"`                 // Enable post-execution interactive mode
+	InteractiveMode        bool   `yaml:"interactive_mode" mapstructure:"interactive_mode"` // Enable post-execution interactive mode
 }
 
 // DefaultDebugConfig returns the default debug configuration
@@ -86,6 +87,28 @@ func DefaultDebugConfig() *DebugConfig {
 		GrepTimeout:            10,    // 10 seconds
 		GrepMaxResults:         100,   // 100 results
 		InteractiveMode:        false, // Disabled by default for backward compatibility
+	}
+}
+
+// ChatConfig represents the chat command configuration
+type ChatConfig struct {
+	MaxIterations         int  `yaml:"max_iterations" mapstructure:"max_iterations"`
+	MaxLinesPerRead       int  `yaml:"max_lines_per_read" mapstructure:"max_lines_per_read"`
+	EnableCompression     bool `yaml:"enable_compression" mapstructure:"enable_compression"`
+	CompressionThreshold  int  `yaml:"compression_threshold" mapstructure:"compression_threshold"`     // Number of messages before compression
+	CompressionKeepRecent int  `yaml:"compression_keep_recent" mapstructure:"compression_keep_recent"` // Number of recent messages to keep
+	MaxHistory            int  `yaml:"max_history" mapstructure:"max_history"`                         // Maximum number of messages to keep
+}
+
+// DefaultChatConfig returns the default chat configuration
+func DefaultChatConfig() *ChatConfig {
+	return &ChatConfig{
+		MaxIterations:         10,
+		MaxLinesPerRead:       1000,
+		EnableCompression:     true,
+		CompressionThreshold:  20,
+		CompressionKeepRecent: 10,
+		MaxHistory:            100,
 	}
 }
 

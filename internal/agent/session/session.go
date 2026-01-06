@@ -58,8 +58,9 @@ func (s *Session) Validate() error {
 	if s.AgentType == "" {
 		return errors.New("agent type is required")
 	}
-	if s.AgentType != "debug" && s.AgentType != "review" {
-		return fmt.Errorf("invalid agent type: %s (must be 'debug' or 'review')", s.AgentType)
+	validTypes := map[string]bool{"debug": true, "review": true, "chat": true}
+	if !validTypes[s.AgentType] {
+		return fmt.Errorf("invalid agent type: %s (must be 'debug', 'review', or 'chat')", s.AgentType)
 	}
 	if s.CreatedAt.IsZero() {
 		return errors.New("created_at is required")

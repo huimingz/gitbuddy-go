@@ -595,3 +595,94 @@ func TestSave_FileSizeLimit(t *testing.T) {
 		t.Error("Save() should return error for session exceeding size limit")
 	}
 }
+
+// TestSession_ChatType tests chat session support
+func TestSession_ChatType(t *testing.T) {
+	session := &Session{
+		ID:        GenerateSessionID("chat"),
+		AgentType: "chat",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		Messages: []*schema.Message{
+			{
+				Role:    schema.User,
+				Content: "What is this code doing?",
+			},
+			{
+				Role:    schema.Assistant,
+				Content: "This code is a Go function that...",
+			},
+		},
+		TokenUsage: TokenUsage{
+			PromptTokens:     50,
+			CompletionTokens: 120,
+			TotalTokens:      170,
+		},
+		IterationCount: 1,
+		MaxIterations:  10,
+		Metadata: map[string]string{
+			"language": "en",
+			"model":    "gpt-4",
+		},
+	}
+
+	// Test validation
+	if err := session.Validate(); err != nil {
+		t.Errorf("Validate() error = %v, want nil", err)
+	}
+
+	// Test JSON marshaling
+	data, err := json.Marshal(session)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	var decoded Session
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if decoded.AgentType != "chat" {
+		t.Errorf("AgentType = %v, want chat", decoded.AgentType)
+	}
+	if len(decoded.Messages) != 2 {
+		t.Errorf("Messages count = %v, want 2", len(decoded.Messages))
+	}
+}
+
+// TestSave_ChatSession tests saving and loading chat sessions
+func TestSave_ChatSession(t *testing.T) {
+	tmpDir := t.TempDir()
+	mgr := NewManager(tmpDir)
+
+	session := &Session{
+		ID:        GenerateSessionID("chat"),
+		AgentType: "chat",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		Messages: []*schema.Message{
+			{
+				Role:    schema.User,
+				Content: "Hello, how are you?",
+			},
+		},
+	}
+
+	// Save session
+	if err := mgr.Save(session); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	// Load session
+	loaded, err := mgr.Load(session.ID)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if loaded.AgentType != "chat" {
+		t.Errorf("AgentType = %v, want chat", loaded.AgentType)
+	}
+	if len(loaded.Messages) != 1 {
+		t.Errorf("Messages count = %v, want 1", len(loaded.Messages))
+	}
+}
