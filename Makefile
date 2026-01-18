@@ -3,11 +3,11 @@
 # Build variables
 BINARY_NAME := gitbuddy
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+GIT_COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME := $(shell date -u '+%Y-%m-%d_%H:%M:%S')
-GO_VERSION := $(shell go version | cut -d ' ' -f 3)
-LDFLAGS := -ldflags "-X github.com/huimingz/gitbuddy-go/internal/cli.Version=$(VERSION) \
-	-X github.com/huimingz/gitbuddy-go/internal/cli.BuildTime=$(BUILD_TIME) \
-	-X github.com/huimingz/gitbuddy-go/internal/cli.GoVersion=$(GO_VERSION)"
+LDFLAGS := -ldflags "-X main.Version=$(VERSION) \
+	-X main.GitCommit=$(GIT_COMMIT) \
+	-X main.BuildTime=$(BUILD_TIME)"
 
 # Default target
 all: build
