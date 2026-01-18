@@ -5,7 +5,13 @@ go 1.24.0
 toolchain go1.24.10
 
 require (
+	github.com/c-bata/go-prompt v0.2.6
+	github.com/charmbracelet/bubbles v0.21.0
+	github.com/charmbracelet/bubbletea v1.3.10
+	github.com/charmbracelet/lipgloss v1.1.0
+	github.com/chzyer/readline v1.5.1
 	github.com/cloudwego/eino v0.7.13
+	github.com/cloudwego/eino-ext/components/model/claude v0.1.13
 	github.com/cloudwego/eino-ext/components/model/gemini v0.1.20
 	github.com/cloudwego/eino-ext/components/model/openai v0.1.6
 	github.com/fatih/color v1.18.0
@@ -42,19 +48,13 @@ require (
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/bytedance/sonic v1.14.1 // indirect
 	github.com/bytedance/sonic/loader v0.3.0 // indirect
-	github.com/c-bata/go-prompt v0.2.6 // indirect
-	github.com/charmbracelet/bubbles v0.21.0 // indirect
-	github.com/charmbracelet/bubbletea v1.3.10 // indirect
 	github.com/charmbracelet/colorprofile v0.2.3-0.20250311203215-f60798e515dc // indirect
-	github.com/charmbracelet/lipgloss v1.1.0 // indirect
 	github.com/charmbracelet/x/ansi v0.10.1 // indirect
 	github.com/charmbracelet/x/cellbuf v0.0.13-0.20250311204145-2c3ea96c31dd // indirect
 	github.com/charmbracelet/x/term v0.2.1 // indirect
-	github.com/chzyer/readline v1.5.1 // indirect
 	github.com/clipperhouse/stringish v0.1.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.3.0 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
-	github.com/cloudwego/eino-ext/components/model/claude v0.1.13 // indirect
 	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.10 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
