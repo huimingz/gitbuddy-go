@@ -34,7 +34,7 @@ GitBuddy-Go is an AI-powered command-line tool that automates and enhances your 
 - **🔄 Automatic Retry**: Smart retry mechanism with exponential backoff for handling transient LLM API failures
 - **💾 Session Management**: Save and resume long-running debug/review sessions with Ctrl+C support
 - **🌍 Multi-Language Support**: Generate output in any language (English, Chinese, Japanese, etc.)
-- **🔧 Multiple LLM Providers**: Supports OpenAI, DeepSeek, Ollama, Grok, and Google Gemini
+- **🔧 Multiple LLM Providers**: Supports OpenAI, DeepSeek, Ollama, Grok, Google Gemini, and Claude
 - **📡 Real-time Streaming**: See the AI's analysis process in real-time with streaming output
 - **🤖 Agentic Workflow**: LLM autonomously uses Git tools to gather context before generating output
 
@@ -112,21 +112,53 @@ models:
     api_key: sk-your-api-key
     model: deepseek-chat
     base_url: https://api.deepseek.com/v1  # optional
+    max_tokens: 4096       # optional, default: 4096
+    temperature: 0.7       # optional
+    top_p: 0.9            # optional
 
   openai:
     provider: openai
     api_key: sk-your-openai-key
     model: gpt-4o
+    max_tokens: 4096       # optional, default: 4096
+    temperature: 0.7       # optional
+    top_p: 0.9            # optional
+
+  claude:
+    provider: claude
+    api_key: sk-ant-your-api-key
+    model: claude-3-5-sonnet-20241022
+    base_url: https://api.anthropic.com  # optional, default: https://api.anthropic.com
+    max_tokens: 4096       # optional, default: 4096
+    temperature: 0.7       # optional
+    top_p: 0.9            # optional
+    top_k: 40             # optional
 
   ollama:
     provider: ollama
     model: qwen2.5:14b
     base_url: http://localhost:11434/v1
+    max_tokens: 4096       # optional, default: 4096
+    temperature: 0.7       # optional
+    top_p: 0.9            # optional
 
   gemini:
     provider: gemini
     api_key: your-gemini-api-key
     model: gemini-2.0-flash
+    max_tokens: 4096       # optional, default: 4096
+    temperature: 0.7       # optional
+    top_p: 0.9            # optional
+    top_k: 40             # optional
+
+  grok:
+    provider: grok
+    api_key: sk-your-xai-api-key
+    model: grok-beta
+    base_url: https://api.x.ai/v1  # optional
+    max_tokens: 4096       # optional, default: 4096
+    temperature: 0.7       # optional
+    top_p: 0.9            # optional
 
 # Default output language
 language: en
@@ -329,6 +361,7 @@ gitbuddy init
 |----------|--------|-------|
 | **DeepSeek** | deepseek-chat, deepseek-reasoner | Recommended for best price/performance |
 | **OpenAI** | gpt-4o, gpt-4o-mini, gpt-3.5-turbo | Requires OpenAI API key |
+| **Claude** | claude-3-5-sonnet, claude-3-5-haiku, claude-3-opus | Requires Anthropic API key |
 | **Ollama** | Any local model | Runs locally, no API key needed |
 | **Grok** | grok-beta | Requires xAI API key |
 | **Gemini** | gemini-2.0-flash, gemini-1.5-pro | Requires Google AI API key |

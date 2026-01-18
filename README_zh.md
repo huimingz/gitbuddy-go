@@ -33,7 +33,7 @@ GitBuddy-Go 是一个 AI 驱动的命令行工具，用于自动化和增强日�
 - **🔄 自动重试**: 智能重试机制，采用指数退避策略处理 LLM API 临时故障
 - **💾 会话管理**: 支持保存和恢复长时间运行的 debug/review 会话，支持 Ctrl+C 中断
 - **🌍 多语言支持**: 支持任意语言输出（中文、英文、日文等）
-- **🔧 多 LLM 支持**: 支持 OpenAI、DeepSeek、Ollama、Grok 和 Google Gemini
+- **🔧 多 LLM 支持**: 支持 OpenAI、DeepSeek、Ollama、Grok、Google Gemini 和 Claude
 - **📡 实时流式输出**: 实时查看 AI 的分析过程
 - **🤖 Agent 工作流**: LLM 自主调用 Git 工具收集上下文，再生成输出
 
@@ -111,21 +111,53 @@ models:
     api_key: sk-your-api-key
     model: deepseek-chat
     base_url: https://api.deepseek.com/v1  # 可选
+    max_tokens: 4096       # 可选，默认：4096
+    temperature: 0.7       # 可选
+    top_p: 0.9            # 可选
 
   openai:
     provider: openai
     api_key: sk-your-openai-key
     model: gpt-4o
+    max_tokens: 4096       # 可选，默认：4096
+    temperature: 0.7       # 可选
+    top_p: 0.9            # 可选
+
+  claude:
+    provider: claude
+    api_key: sk-ant-your-api-key
+    model: claude-3-5-sonnet-20241022
+    base_url: https://api.anthropic.com  # 可选，默认：https://api.anthropic.com
+    max_tokens: 4096       # 可选，默认：4096
+    temperature: 0.7       # 可选
+    top_p: 0.9            # 可选
+    top_k: 40             # 可选
 
   ollama:
     provider: ollama
     model: qwen2.5:14b
     base_url: http://localhost:11434/v1
+    max_tokens: 4096       # 可选，默认：4096
+    temperature: 0.7       # 可选
+    top_p: 0.9            # 可选
 
   gemini:
     provider: gemini
     api_key: your-gemini-api-key
     model: gemini-2.0-flash
+    max_tokens: 4096       # 可选，默认：4096
+    temperature: 0.7       # 可选
+    top_p: 0.9            # 可选
+    top_k: 40             # 可选
+
+  grok:
+    provider: grok
+    api_key: sk-your-xai-api-key
+    model: grok-beta
+    base_url: https://api.x.ai/v1  # 可选
+    max_tokens: 4096       # 可选，默认：4096
+    temperature: 0.7       # 可选
+    top_p: 0.9            # 可选
 
 # 默认输出语言
 language: zh
@@ -328,6 +360,7 @@ gitbuddy init
 |--------|------|------|
 | **DeepSeek** | deepseek-chat, deepseek-reasoner | 推荐，性价比最高 |
 | **OpenAI** | gpt-4o, gpt-4o-mini, gpt-3.5-turbo | 需要 OpenAI API 密钥 |
+| **Claude** | claude-3-5-sonnet, claude-3-5-haiku, claude-3-opus | 需要 Anthropic API 密钥 |
 | **Ollama** | 任意本地模型 | 本地运行，无需 API 密钥 |
 | **Grok** | grok-beta | 需要 xAI API 密钥 |
 | **Gemini** | gemini-2.0-flash, gemini-1.5-pro | 需要 Google AI API 密钥 |

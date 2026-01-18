@@ -33,7 +33,7 @@ GitBuddy-Goは、日常のGitワークフローを自動化・強化するAI駆�
 - **🔄 自動リトライ**: 一時的なLLM APIの障害に対応する指数バックオフ付きスマートリトライ機構
 - **💾 セッション管理**: Ctrl+Cサポート付きで長時間実行のデバッグ/レビューセッションを保存・再開
 - **🌍 多言語対応**: 任意の言語で出力可能（日本語、英語、中国語など）
-- **🔧 複数LLMプロバイダー対応**: OpenAI、DeepSeek、Ollama、Grok、Google Geminiをサポート
+- **🔧 複数LLMプロバイダー対応**: OpenAI、DeepSeek、Ollama、Grok、Google Gemini、Claudeをサポート
 - **📡 リアルタイムストリーミング**: AIの分析プロセスをリアルタイムで確認
 - **🤖 エージェントワークフロー**: LLMが自律的にGitツールを使用してコンテキストを収集
 
@@ -111,21 +111,53 @@ models:
     api_key: sk-your-api-key
     model: deepseek-chat
     base_url: https://api.deepseek.com/v1  # オプション
+    max_tokens: 4096       # オプション、デフォルト：4096
+    temperature: 0.7       # オプション
+    top_p: 0.9            # オプション
 
   openai:
     provider: openai
     api_key: sk-your-openai-key
     model: gpt-4o
+    max_tokens: 4096       # オプション、デフォルト：4096
+    temperature: 0.7       # オプション
+    top_p: 0.9            # オプション
+
+  claude:
+    provider: claude
+    api_key: sk-ant-your-api-key
+    model: claude-3-5-sonnet-20241022
+    base_url: https://api.anthropic.com  # オプション、デフォルト：https://api.anthropic.com
+    max_tokens: 4096       # オプション、デフォルト：4096
+    temperature: 0.7       # オプション
+    top_p: 0.9            # オプション
+    top_k: 40             # オプション
 
   ollama:
     provider: ollama
     model: qwen2.5:14b
     base_url: http://localhost:11434/v1
+    max_tokens: 4096       # オプション、デフォルト：4096
+    temperature: 0.7       # オプション
+    top_p: 0.9            # オプション
 
   gemini:
     provider: gemini
     api_key: your-gemini-api-key
     model: gemini-2.0-flash
+    max_tokens: 4096       # オプション、デフォルト：4096
+    temperature: 0.7       # オプション
+    top_p: 0.9            # オプション
+    top_k: 40             # オプション
+
+  grok:
+    provider: grok
+    api_key: sk-your-xai-api-key
+    model: grok-beta
+    base_url: https://api.x.ai/v1  # オプション
+    max_tokens: 4096       # オプション、デフォルト：4096
+    temperature: 0.7       # オプション
+    top_p: 0.9            # オプション
 
 # デフォルト出力言語
 language: ja
@@ -328,6 +360,7 @@ gitbuddy init
 |--------------|--------|------|
 | **DeepSeek** | deepseek-chat, deepseek-reasoner | おすすめ、コストパフォーマンス最高 |
 | **OpenAI** | gpt-4o, gpt-4o-mini, gpt-3.5-turbo | OpenAI APIキーが必要 |
+| **Claude** | claude-3-5-sonnet, claude-3-5-haiku, claude-3-opus | Anthropic APIキーが必要 |
 | **Ollama** | 任意のローカルモデル | ローカル実行、APIキー不要 |
 | **Grok** | grok-beta | xAI APIキーが必要 |
 | **Gemini** | gemini-2.0-flash, gemini-1.5-pro | Google AI APIキーが必要 |
