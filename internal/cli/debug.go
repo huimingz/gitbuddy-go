@@ -135,13 +135,10 @@ func runDebug(cmd *cobra.Command, args []string) error {
 
 	// Get language
 	language := cfg.GetLanguage(debugLanguage)
-	log.Debug("Using language: %s", language)
+	fmt.Printf("ℹ️  Language: %s\n", language)
 
 	// Get debug config
 	debugCfg := cfg.GetDebugConfig()
-	log.Debug("Max lines per read: %d", debugCfg.MaxLinesPerRead)
-	log.Debug("Issues directory: %s", debugCfg.IssuesDir)
-	log.Debug("Max iterations: %d", debugCfg.MaxIterations)
 
 	// Override issues dir if specified
 	issuesDir := debugIssuesDir
@@ -163,6 +160,24 @@ func runDebug(cmd *cobra.Command, args []string) error {
 	}
 
 	log.Debug("LLM provider created successfully")
+
+	// Print LLM configuration
+	log.PrintLLMConfig(
+		modelName,
+		modelConfig.Provider,
+		modelConfig.BaseURL,
+		modelConfig.MaxTokens,
+		modelConfig.Temperature,
+		modelConfig.TopP,
+		modelConfig.TopK,
+	)
+
+	// Print command-specific configuration
+	log.PrintCommandConfig(map[string]string{
+		"Max Iterations":     fmt.Sprintf("%d", maxIterations),
+		"Max Lines Per Read": fmt.Sprintf("%d", debugCfg.MaxLinesPerRead),
+		"Issues Directory":   issuesDir,
+	})
 
 	// Get current working directory
 	workDir, err := os.Getwd()

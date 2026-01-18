@@ -13,6 +13,7 @@ import (
 	"github.com/huimingz/gitbuddy-go/internal/agent/session"
 	"github.com/huimingz/gitbuddy-go/internal/config"
 	"github.com/huimingz/gitbuddy-go/internal/git"
+	"github.com/huimingz/gitbuddy-go/internal/log"
 	"github.com/huimingz/gitbuddy-go/internal/llm"
 	"github.com/huimingz/gitbuddy-go/internal/ui"
 	"github.com/spf13/cobra"
@@ -126,6 +127,25 @@ func handleChat(ctx context.Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create LLM provider: %w", err)
 	}
+
+	// Print language
+	fmt.Printf("ℹ️  Language: %s\n", chatLanguage)
+
+	// Print LLM configuration
+	log.PrintLLMConfig(
+		modelCfg.Model,
+		modelCfg.Provider,
+		modelCfg.BaseURL,
+		modelCfg.MaxTokens,
+		modelCfg.Temperature,
+		modelCfg.TopP,
+		modelCfg.TopK,
+	)
+
+	// Print command-specific configuration
+	log.PrintCommandConfig(map[string]string{
+		"Max Iterations": fmt.Sprintf("%d", chatMaxIterations),
+	})
 
 	// Get retry configuration
 	var retryConfig llm.RetryConfig

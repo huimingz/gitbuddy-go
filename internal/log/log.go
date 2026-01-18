@@ -141,3 +141,36 @@ func truncate(s string, maxLen int) string {
 	}
 	return s[:maxLen] + "..."
 }
+
+// PrintLLMConfig prints LLM configuration information (always visible, not just debug mode)
+func PrintLLMConfig(model, provider, baseURL string, maxTokens int, temperature, topP *float32, topK *int32) {
+	info := func(format string, args ...interface{}) {
+		fmt.Fprintf(output, "ℹ️  "+format+"\n", args...)
+	}
+
+	if baseURL != "" {
+		info("Base URL: %s", baseURL)
+	}
+	if temperature != nil {
+		info("Temperature: %.1f", *temperature)
+	}
+	if topP != nil {
+		info("Top-P: %.2f", *topP)
+	}
+	if topK != nil {
+		info("Top-K: %d", *topK)
+	}
+	// Use default value if maxTokens is 0
+	if maxTokens == 0 {
+		info("Max Tokens: %d (default)", 4096)
+	} else {
+		info("Max Tokens: %d", maxTokens)
+	}
+}
+
+// PrintCommandConfig prints command-specific configuration (always visible, not just debug mode)
+func PrintCommandConfig(configs map[string]string) {
+	for key, value := range configs {
+		fmt.Fprintf(output, "ℹ️  %s: %s\n", key, value)
+	}
+}

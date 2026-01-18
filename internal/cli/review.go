@@ -79,11 +79,10 @@ func runReview(cmd *cobra.Command, args []string) error {
 
 	// Get language
 	language := cfg.GetLanguage(reviewLanguage)
-	log.Debug("Using language: %s", language)
+	fmt.Printf("ℹ️  Language: %s\n", language)
 
 	// Get review config
 	reviewCfg := cfg.GetReviewConfig()
-	log.Debug("Max lines per read: %d", reviewCfg.MaxLinesPerRead)
 
 	// Create LLM provider
 	factory := llm.NewProviderFactory()
@@ -93,6 +92,23 @@ func runReview(cmd *cobra.Command, args []string) error {
 	}
 
 	log.Debug("LLM provider created successfully")
+
+	// Print LLM configuration
+	log.PrintLLMConfig(
+		modelName,
+		modelConfig.Provider,
+		modelConfig.BaseURL,
+		modelConfig.MaxTokens,
+		modelConfig.Temperature,
+		modelConfig.TopP,
+		modelConfig.TopK,
+	)
+
+	// Print command-specific configuration
+	log.PrintCommandConfig(map[string]string{
+		"Max Lines Per Read": fmt.Sprintf("%d", reviewCfg.MaxLinesPerRead),
+		"Grep Max File Size":  fmt.Sprintf("%d MB", reviewCfg.GrepMaxFileSize),
+	})
 
 	// Get current working directory
 	workDir, err := os.Getwd()

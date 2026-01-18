@@ -75,7 +75,7 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	// Get language (CLI flag > config > default)
 	language := cfg.GetLanguage(commitLanguage)
 
-	log.Debug("Using language: %s", language)
+	fmt.Printf("ℹ️  Language: %s\n", language)
 
 	// Get current working directory
 	cwd, err := os.Getwd()
@@ -108,6 +108,17 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	}
 
 	log.Debug("LLM provider created successfully")
+
+	// Print LLM configuration
+	log.PrintLLMConfig(
+		model,
+		modelConfig.Provider,
+		modelConfig.BaseURL,
+		modelConfig.MaxTokens,
+		modelConfig.Temperature,
+		modelConfig.TopP,
+		modelConfig.TopK,
+	)
 
 	// Get retry config
 	retryConfigPtr := cfg.GetRetryConfig()
