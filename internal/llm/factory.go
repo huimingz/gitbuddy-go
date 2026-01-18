@@ -27,6 +27,8 @@ func (f *ProviderFactory) Create(cfg config.ModelConfig) (Provider, error) {
 		return NewGeminiProvider(cfg), nil
 	case "grok":
 		return NewGrokProvider(cfg), nil
+	case "claude":
+		return NewClaudeProvider(cfg), nil
 	default:
 		return nil, fmt.Errorf("unsupported provider: %s", cfg.Provider)
 	}

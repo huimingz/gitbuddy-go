@@ -30,10 +30,19 @@ func (p *OpenAIProvider) GetConfig() config.ModelConfig {
 
 // CreateChatModel creates an Eino ChatModel for OpenAI
 func (p *OpenAIProvider) CreateChatModel(ctx context.Context) (model.ChatModel, error) {
+	// Set default max tokens if not specified
+	maxTokens := p.cfg.MaxTokens
+	if maxTokens == 0 {
+		maxTokens = config.DefaultMaxTokens
+	}
+
 	cfg := &openai.ChatModelConfig{
-		APIKey:  p.cfg.APIKey,
-		Model:   p.cfg.Model,
-		BaseURL: p.cfg.BaseURL,
+		APIKey:      p.cfg.APIKey,
+		Model:       p.cfg.Model,
+		BaseURL:     p.cfg.BaseURL,
+		MaxTokens:   &maxTokens,
+		Temperature: p.cfg.Temperature,
+		TopP:        p.cfg.TopP,
 	}
 
 	return openai.NewChatModel(ctx, cfg)

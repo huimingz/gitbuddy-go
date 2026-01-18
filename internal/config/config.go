@@ -16,7 +16,13 @@ var supportedProviders = map[string]bool{
 	"ollama":   true,
 	"gemini":   true,
 	"grok":     true,
+	"claude":   true,
 }
+
+// Default configuration values
+const (
+	DefaultMaxTokens = 4096
+)
 
 // SupportedProviders returns a list of supported providers
 func SupportedProviders() []string {
@@ -183,6 +189,11 @@ type ModelConfig struct {
 	APIKey   string `yaml:"api_key" mapstructure:"api_key"`
 	Model    string `yaml:"model" mapstructure:"model"`
 	BaseURL  string `yaml:"base_url" mapstructure:"base_url"`
+	// Common model parameters (optional, shared by all providers)
+	MaxTokens   int      `yaml:"max_tokens" mapstructure:"max_tokens"`
+	Temperature *float32 `yaml:"temperature" mapstructure:"temperature"`
+	TopP        *float32 `yaml:"top_p" mapstructure:"top_p"`
+	TopK        *int32   `yaml:"top_k" mapstructure:"top_k"`
 }
 
 // Validate validates the model configuration

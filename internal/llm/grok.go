@@ -40,11 +40,20 @@ func (p *GrokProvider) GetConfig() config.ModelConfig {
 
 // CreateChatModel creates an Eino ChatModel for Grok
 func (p *GrokProvider) CreateChatModel(ctx context.Context) (model.ChatModel, error) {
+	// Set default max tokens if not specified
+	maxTokens := p.cfg.MaxTokens
+	if maxTokens == 0 {
+		maxTokens = config.DefaultMaxTokens
+	}
+
 	// Grok uses OpenAI-compatible API
 	cfg := &openai.ChatModelConfig{
-		APIKey:  p.cfg.APIKey,
-		Model:   p.cfg.Model,
-		BaseURL: p.cfg.BaseURL,
+		APIKey:      p.cfg.APIKey,
+		Model:       p.cfg.Model,
+		BaseURL:     p.cfg.BaseURL,
+		MaxTokens:   &maxTokens,
+		Temperature: p.cfg.Temperature,
+		TopP:        p.cfg.TopP,
 	}
 
 	return openai.NewChatModel(ctx, cfg)

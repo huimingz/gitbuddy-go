@@ -39,9 +39,19 @@ func (p *GeminiProvider) CreateChatModel(ctx context.Context) (model.ChatModel, 
 		return nil, err
 	}
 
+	// Set default max tokens if not specified
+	maxTokens := p.cfg.MaxTokens
+	if maxTokens == 0 {
+		maxTokens = config.DefaultMaxTokens
+	}
+
 	cfg := &gemini.Config{
-		Client: client,
-		Model:  p.cfg.Model,
+		Client:      client,
+		Model:       p.cfg.Model,
+		MaxTokens:   &maxTokens,
+		Temperature: p.cfg.Temperature,
+		TopP:        p.cfg.TopP,
+		TopK:        p.cfg.TopK,
 	}
 
 	return gemini.NewChatModel(ctx, cfg)
