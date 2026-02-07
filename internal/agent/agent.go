@@ -245,36 +245,57 @@ func (a *CommitAgent) GenerateCommitMessage(ctx context.Context, req CommitReque
 	gitDiffCachedTool := tools.NewGitDiffCachedTool(a.opts.GitExecutor)
 	gitLogTool := tools.NewGitLogTool(a.opts.GitExecutor)
 
-	// Define tool schemas
-	toolInfos := []*schema.ToolInfo{
-		{
-			Name:        "git_status",
-			Desc:        gitStatusTool.Description(),
-			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{}),
-		},
-		{
-			Name:        "git_diff_cached",
-			Desc:        gitDiffCachedTool.Description(),
-			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{}),
-		},
-		{
-			Name: "git_log",
-			Desc: gitLogTool.Description(),
-			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-				"count": {Type: schema.Integer, Desc: "Number of commits to retrieve (default 5)", Required: false},
-			}),
-		},
-		{
-			Name: "submit_commit",
-			Desc: "Submit the structured commit information. Call this when you have analyzed the changes and are ready to generate the commit message.",
-			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-				"type":        {Type: schema.String, Desc: "Commit type: feat, fix, docs, style, refactor, perf, test, chore, build, ci, or revert", Required: true},
-				"scope":       {Type: schema.String, Desc: "Commit scope (optional)", Required: false},
-				"description": {Type: schema.String, Desc: "Short description (max 50 chars preferred)", Required: true},
-				"body":        {Type: schema.String, Desc: "Detailed description (optional)", Required: false},
-				"footer":      {Type: schema.String, Desc: "Footer for breaking changes or issue references (optional)", Required: false},
-			}),
-		},
+	// Define tool schemas based on prefetch mode
+	// In prefetch mode, only bind submit_commit to avoid LLM calling git tools
+	var toolInfos []*schema.ToolInfo
+
+	if a.opts.PrefetchEnabled {
+		// Prefetch mode: only bind submit_commit tool
+		toolInfos = []*schema.ToolInfo{
+			{
+				Name: "submit_commit",
+				Desc: "Submit the structured commit information. Call this when you have analyzed the pre-loaded changes and are ready to generate the commit message.",
+				ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+					"type":        {Type: schema.String, Desc: "Commit type: feat, fix, docs, style, refactor, perf, test, chore, build, ci, or revert", Required: true},
+					"scope":       {Type: schema.String, Desc: "Commit scope (optional)", Required: false},
+					"description": {Type: schema.String, Desc: "Short description (max 50 chars preferred)", Required: true},
+					"body":        {Type: schema.String, Desc: "Detailed description (optional)", Required: false},
+					"footer":      {Type: schema.String, Desc: "Footer for breaking changes or issue references (optional)", Required: false},
+				}),
+			},
+		}
+	} else {
+		// Tool call mode: bind all tools
+		toolInfos = []*schema.ToolInfo{
+			{
+				Name:        "git_status",
+				Desc:        gitStatusTool.Description(),
+				ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{}),
+			},
+			{
+				Name:        "git_diff_cached",
+				Desc:        gitDiffCachedTool.Description(),
+				ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{}),
+			},
+			{
+				Name: "git_log",
+				Desc: gitLogTool.Description(),
+				ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+					"count": {Type: schema.Integer, Desc: "Number of commits to retrieve (default 5)", Required: false},
+				}),
+			},
+			{
+				Name: "submit_commit",
+				Desc: "Submit the structured commit information. Call this when you have analyzed the changes and are ready to generate the commit message.",
+				ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+					"type":        {Type: schema.String, Desc: "Commit type: feat, fix, docs, style, refactor, perf, test, chore, build, ci, or revert", Required: true},
+					"scope":       {Type: schema.String, Desc: "Commit scope (optional)", Required: false},
+					"description": {Type: schema.String, Desc: "Short description (max 50 chars preferred)", Required: true},
+					"body":        {Type: schema.String, Desc: "Detailed description (optional)", Required: false},
+					"footer":      {Type: schema.String, Desc: "Footer for breaking changes or issue references (optional)", Required: false},
+				}),
+			},
+		}
 	}
 
 	// Bind tools to chat model
@@ -505,7 +526,23 @@ func (a *CommitAgent) GenerateCommitMessage(ctx context.Context, req CommitReque
 				}, nil
 			}
 
-			// Execute other tools
+			// In prefetch mode, git tools should not be called (they are not bound)
+			// If LLM somehow tries to call them, return an error message
+			if a.opts.PrefetchEnabled {
+				switch tc.Function.Name {
+				case "git_status", "git_diff_cached", "git_log":
+					toolResult := fmt.Sprintf("Error: In prefetch mode, git information is already provided. Please analyze the pre-loaded data and call submit_commit directly.")
+					log.Debug("Tool %s called in prefetch mode (should not happen)", tc.Function.Name)
+					messages = append(messages, &schema.Message{
+						Role:       schema.Tool,
+						Content:    toolResult,
+						ToolCallID: tc.ID,
+					})
+					continue
+				}
+			}
+
+			// Execute other tools (only in non-prefetch mode)
 			var result string
 			var toolErr error
 

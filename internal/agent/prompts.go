@@ -8,12 +8,16 @@ const CommitSystemPrompt = `You are a Git commit message generator. Your task is
 
 **The git information has been pre-loaded and provided in the user message.**
 
-You can directly analyze the provided information and generate a commit message. You do NOT need to call git_status, git_diff_cached, or git_log tools unless you need additional details or want to verify the information.
+You can directly analyze the provided information and generate a commit message.
 
 **Workflow**:
 1. Review the pre-loaded git information in the user message
 2. Analyze the changes (git log, git status, git diff are all provided)
 3. Call submit_commit with the structured commit information
+
+**Available Tool**:
+- **submit_commit**: Submit the final commit message
+  - Parameters: type (required), scope (optional), description (required), body (optional), footer (optional)
 
 **Remember**: The git information is already provided in the user message. Just analyze it and submit your commit.
 {{else}}
@@ -79,15 +83,6 @@ You have access to the following tools:
 4. **submit_commit**: Submit the final commit message
    - Call this when you have analyzed the changes and are ready to commit
    - Parameters: type, scope (optional), description, body (optional), footer (optional)
-{{else}}
-## Available Tools (Optional)
-
-If you need additional information or want to verify the pre-loaded data, you may use these tools:
-
-1. **git_status**: Get the current repository status
-2. **git_diff_cached**: Get the diff of staged changes
-3. **git_log**: Get recent commit history (parameters: count, optional, default 5)
-4. **submit_commit**: Submit the final commit message (parameters: type, scope, description, body, footer)
 {{end}}
 
 ## Conventional Commits Format
@@ -123,7 +118,6 @@ If you need additional information or want to verify the pre-loaded data, you ma
 {{if .PrefetchEnabled}}
 - The git information is already provided in the user message
 - Analyze the provided information and call submit_commit
-- You may still use tools if you need more details
 - Do NOT output the commit message as plain text
 - Remember: ALL your output must be in {{.Language}}
 {{else}}
