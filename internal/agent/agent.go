@@ -339,6 +339,16 @@ func (a *CommitAgent) GenerateCommitMessage(ctx context.Context, req CommitReque
 		buf.WriteString("Based on the above information, please generate an appropriate commit message following the Conventional Commits specification.")
 
 		userMsg = buf.String()
+
+		// Log prefetch performance metrics in debug mode
+		if a.opts.Debug {
+			log.Debug("Prefetch performance metrics:")
+			log.Debug("  git log: %d bytes (~%d tokens)", len(logResult), estimateTokenCount(logResult))
+			log.Debug("  git status: %d bytes (~%d tokens)", len(statusResult), estimateTokenCount(statusResult))
+			log.Debug("  git diff: %d bytes (~%d tokens)", len(diffResult), estimateTokenCount(diffResult))
+			log.Debug("  total message: %d bytes (~%d tokens)", len(userMsg), estimateTokenCount(userMsg))
+		}
+
 		printSuccess("Git information pre-loaded")
 	} else {
 		userMsg = "Please generate a commit message for the staged changes. Use the available tools to analyze the changes first."
