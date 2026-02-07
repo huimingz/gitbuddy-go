@@ -19,6 +19,8 @@ var (
 	commitContext  string
 	commitLanguage string
 	commitAutoYes  bool
+	commitLogCount int
+	commitNoPrefetch bool
 )
 
 var commitCmd = &cobra.Command{
@@ -43,6 +45,8 @@ func init() {
 	commitCmd.Flags().StringVarP(&commitContext, "context", "c", "", "Additional context to help AI generate better message")
 	commitCmd.Flags().StringVarP(&commitLanguage, "language", "l", "", "Output language (en, zh, ja, etc.)")
 	commitCmd.Flags().BoolVarP(&commitAutoYes, "yes", "y", false, "Auto-confirm the commit without prompting")
+	commitCmd.Flags().IntVar(&commitLogCount, "log-count", 0, "Number of recent commits to include in context (default: 5)")
+	commitCmd.Flags().BoolVar(&commitNoPrefetch, "no-prefetch", false, "Disable prefetch mode and use tool calls")
 	rootCmd.AddCommand(commitCmd)
 }
 
@@ -134,15 +138,22 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	// Setup stream printer
 	printer := ui.NewStreamPrinter(os.Stdout, ui.WithVerbose(debugMode))
 
+	// Get commit config
+	commitConfig := cfg.GetCommitConfig(commitLogCount, commitNoPrefetch)
+
+	log.Debug("Commit config: prefetch_enabled=%v, log_count=%d", commitConfig.PrefetchEnabled, commitConfig.LogCount)
+
 	// Create commit agent with printer for progress output
 	agentOpts := agent.CommitAgentOptions{
-		Language:    language,
-		GitExecutor: gitExec,
-		LLMProvider: provider,
-		Printer:     printer,
-		Output:      os.Stdout,
-		Debug:       debugMode,
-		RetryConfig: retryConfig,
+		Language:        language,
+		GitExecutor:     gitExec,
+		LLMProvider:     provider,
+		Printer:         printer,
+		Output:          os.Stdout,
+		Debug:           debugMode,
+		RetryConfig:     retryConfig,
+		PrefetchEnabled: commitConfig.PrefetchEnabled,
+		LogCount:        commitConfig.LogCount,
 	}
 
 	commitAgent, err := agent.NewCommitAgent(agentOpts)

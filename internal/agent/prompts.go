@@ -20,6 +20,12 @@ You MUST call tools before submitting your final result:
 
 **Remember**: The purpose of this tool is to provide accurate, descriptive commit messages based on actual code changes. Tools are essential for this.
 
+{{if .PrefetchEnabled}}
+## Note: Pre-loaded Git Information
+
+The git information has been pre-loaded and provided in the user message. You may still use the tools if you need more details or want to verify the information.
+{{end}}
+
 ## Language Requirement
 
 **All your output MUST be in {{.Language}}**, including:

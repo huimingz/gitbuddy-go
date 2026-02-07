@@ -100,13 +100,15 @@ type CommitResponse struct {
 
 // CommitAgentOptions contains configuration for CommitAgent
 type CommitAgentOptions struct {
-	Language    string
-	GitExecutor git.Executor
-	LLMProvider llm.Provider
-	Printer     *ui.StreamPrinter
-	Output      io.Writer
-	Debug       bool
-	RetryConfig llm.RetryConfig
+	Language        string
+	GitExecutor     git.Executor
+	LLMProvider     llm.Provider
+	Printer         *ui.StreamPrinter
+	Output          io.Writer
+	Debug           bool
+	RetryConfig     llm.RetryConfig
+	PrefetchEnabled bool // Whether to prefetch git information
+	LogCount        int   // Number of commits to include in prefetch
 }
 
 // Validate validates the options and sets defaults
@@ -141,16 +143,17 @@ func NewCommitAgent(opts CommitAgentOptions) (*CommitAgent, error) {
 }
 
 // BuildSystemPrompt builds the system prompt for commit generation
-func BuildSystemPrompt(language, context string) string {
+func BuildSystemPrompt(language, context string, prefetchEnabled bool) string {
 	tmpl, err := template.New("commit_prompt").Parse(CommitSystemPrompt)
 	if err != nil {
 		return CommitSystemPrompt
 	}
 
 	var buf bytes.Buffer
-	data := map[string]string{
-		"Language": language,
-		"Context":  context,
+	data := map[string]interface{}{
+		"Language":         language,
+		"Context":          context,
+		"PrefetchEnabled":  prefetchEnabled,
 	}
 	if err := tmpl.Execute(&buf, data); err != nil {
 		return CommitSystemPrompt
@@ -280,14 +283,66 @@ func (a *CommitAgent) GenerateCommitMessage(ctx context.Context, req CommitReque
 	}
 
 	// Build system prompt
-	systemPrompt := BuildSystemPrompt(req.Language, req.Context)
+	systemPrompt := BuildSystemPrompt(req.Language, req.Context, a.opts.PrefetchEnabled)
 	printInfo(fmt.Sprintf("Language: %s", req.Language))
 	if req.Context != "" {
 		printInfo(fmt.Sprintf("Context: %s", req.Context))
 	}
 
-	// Initial messages
-	userMsg := "Please generate a commit message for the staged changes. Use the available tools to analyze the changes first."
+	// Prefetch git information if enabled
+	var userMsg string
+	if a.opts.PrefetchEnabled {
+		printProgress("Pre-loading git information...")
+
+		// Execute git log
+		logResult, err := a.opts.GitExecutor.Log(ctx, git.LogOptions{Count: a.opts.LogCount})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get git log: %w", err)
+		}
+
+		// Execute git status
+		statusResult, err := a.opts.GitExecutor.Status(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get git status: %w", err)
+		}
+
+		// Execute git diff --cached
+		diffResult, err := a.opts.GitExecutor.DiffCached(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get staged changes: %w", err)
+		}
+
+		// Build prefetch message with XML tags
+		var buf strings.Builder
+		buf.WriteString("Please generate a commit message based on the following git information:\n\n")
+		buf.WriteString("<git_context>\n")
+
+		buf.WriteString("<git_log>\n")
+		if logResult != "" {
+			buf.WriteString(logResult)
+		}
+		buf.WriteString("\n</git_log>\n\n")
+
+		buf.WriteString("<git_status>\n")
+		if statusResult != "" {
+			buf.WriteString(statusResult)
+		}
+		buf.WriteString("\n</git_status>\n\n")
+
+		buf.WriteString("<git_diff_cached>\n")
+		if diffResult != "" {
+			buf.WriteString(diffResult)
+		}
+		buf.WriteString("\n</git_diff_cached>\n")
+
+		buf.WriteString("</git_context>\n\n")
+		buf.WriteString("Based on the above information, please generate an appropriate commit message following the Conventional Commits specification.")
+
+		userMsg = buf.String()
+		printSuccess("Git information pre-loaded")
+	} else {
+		userMsg = "Please generate a commit message for the staged changes. Use the available tools to analyze the changes first."
+	}
 
 	messages := []*schema.Message{
 		{Role: schema.System, Content: systemPrompt},

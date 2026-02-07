@@ -44,6 +44,7 @@ type Config struct {
 	Chat         *ChatConfig            `yaml:"chat" mapstructure:"chat"`
 	Retry        *RetryConfig           `yaml:"retry" mapstructure:"retry"`
 	Session      *SessionConfig         `yaml:"session" mapstructure:"session"`
+	Commit       *CommitConfig          `yaml:"commit" mapstructure:"commit"`
 }
 
 // ReviewConfig represents the review command configuration
@@ -181,6 +182,44 @@ func (s *SessionConfig) Validate() error {
 		return fmt.Errorf("max_sessions must be non-negative")
 	}
 	return nil
+}
+
+// CommitConfig represents the commit command configuration
+type CommitConfig struct {
+	PrefetchEnabled bool `yaml:"prefetch_enabled" mapstructure:"prefetch_enabled"`
+	LogCount        int  `yaml:"log_count" mapstructure:"log_count"`
+}
+
+// DefaultCommitConfig returns the default commit configuration
+func DefaultCommitConfig() *CommitConfig {
+	return &CommitConfig{
+		PrefetchEnabled: true,
+		LogCount:        5,
+	}
+}
+
+// GetCommitConfig returns the commit configuration with defaults applied
+// CLI flags (logCount, noPrefetch) override config file values
+func (c *Config) GetCommitConfig(logCount int, noPrefetch bool) *CommitConfig {
+	if c.Commit == nil {
+		c.Commit = DefaultCommitConfig()
+	}
+	// Apply defaults for unset values
+	defaults := DefaultCommitConfig()
+	if c.Commit.LogCount <= 0 {
+		c.Commit.LogCount = defaults.LogCount
+	}
+
+	// Create a copy to avoid modifying the original config
+	result := *c.Commit
+	// CLI flags override config
+	if noPrefetch {
+		result.PrefetchEnabled = false
+	}
+	if logCount > 0 {
+		result.LogCount = logCount
+	}
+	return &result
 }
 
 // ModelConfig represents a single model configuration
