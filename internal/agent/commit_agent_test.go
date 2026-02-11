@@ -249,14 +249,14 @@ func TestCommitAgentOptions_Validate(t *testing.T) {
 
 func TestBuildSystemPrompt(t *testing.T) {
 	t.Run("without context", func(t *testing.T) {
-		prompt := BuildSystemPrompt("en", "")
+		prompt := BuildSystemPrompt("en", "", false)
 		assert.Contains(t, prompt, "Git commit message generator")
 		assert.Contains(t, prompt, "en")
 		assert.NotContains(t, prompt, "Additional Context")
 	})
 
 	t.Run("with context", func(t *testing.T) {
-		prompt := BuildSystemPrompt("zh", "这是一个修复bug的提交")
+		prompt := BuildSystemPrompt("zh", "这是一个修复bug的提交", false)
 		assert.Contains(t, prompt, "zh")
 		assert.Contains(t, prompt, "Additional Context")
 		assert.Contains(t, prompt, "这是一个修复bug的提交")
