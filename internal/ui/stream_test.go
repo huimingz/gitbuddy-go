@@ -126,6 +126,59 @@ func TestStreamPrinter_Newline(t *testing.T) {
 	assert.Equal(t, "\n", buf.String())
 }
 
+func TestFlushingWriter(t *testing.T) {
+	t.Run("wraps os.File and flushes", func(t *testing.T) {
+		// Use os.Stdout for realistic testing
+		writer := NewFlushingWriter(os.Stdout)
+		require.NotNil(t, writer)
+
+		// Should implement io.Writer
+		_, err := writer.Write([]byte("test"))
+		require.NoError(t, err)
+	})
+
+	t.Run("writes through to underlying writer", func(t *testing.T) {
+		var buf bytes.Buffer
+		writer := NewFlushingWriter(&buf)
+		_, err := writer.Write([]byte("hello"))
+		require.NoError(t, err)
+		assert.Equal(t, "hello", buf.String())
+	})
+
+	t.Run("Flush method returns nil for non-File writer", func(t *testing.T) {
+		var buf bytes.Buffer
+		writer := NewFlushingWriter(&buf)
+		err := writer.Flush()
+		require.NoError(t, err)
+	})
+
+	t.Run("empty write does not panic", func(t *testing.T) {
+		var buf bytes.Buffer
+		writer := NewFlushingWriter(&buf)
+		_, err := writer.Write([]byte{})
+		require.NoError(t, err)
+		assert.Equal(t, "", buf.String())
+	})
+
+	t.Run("multiple writes accumulate", func(t *testing.T) {
+		var buf bytes.Buffer
+		writer := NewFlushingWriter(&buf)
+		_, err := writer.Write([]byte("hello"))
+		require.NoError(t, err)
+		_, err = writer.Write([]byte(" world"))
+		require.NoError(t, err)
+		assert.Equal(t, "hello world", buf.String())
+	})
+}
+
+func TestNewStreamPrinter_WithStdout(t *testing.T) {
+	printer := NewStreamPrinter(os.Stdout)
+	require.NotNil(t, printer)
+	// When writer is os.Stdout, it should be wrapped with FlushingWriter
+	_, isFlushingWriter := printer.writer.(*FlushingWriter)
+	assert.True(t, isFlushingWriter, "os.Stdout should be wrapped with FlushingWriter")
+}
+
 func TestStreamPrinter_CustomWriter(t *testing.T) {
 	// Test with a custom io.Writer
 	pr, pw := io.Pipe()

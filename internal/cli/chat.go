@@ -182,14 +182,14 @@ func handleChat(ctx context.Context, args []string) error {
 	if len(args) > 0 {
 		// Single query mode
 		query := strings.Join(args, " ")
-		return handleSingleQuery(ctx, chatAgent, query, sessionID, sess)
+		return handleSingleQuery(ctx, chatAgent, query, sessionID, sess, printer)
 	}
 
 	// Interactive mode
-	return handleInteractiveChat(ctx, chatAgent, sessionID, sess)
+	return handleInteractiveChat(ctx, chatAgent, sessionID, sess, printer)
 }
 
-func handleSingleQuery(ctx context.Context, chatAgent *agent.ChatAgent, query string, sessionID string, sess *session.Session) error {
+func handleSingleQuery(ctx context.Context, chatAgent *agent.ChatAgent, query string, sessionID string, sess *session.Session, printer *ui.StreamPrinter) error {
 	req := &agent.ChatRequest{
 		Query:                 query,
 		Language:              chatLanguage,
@@ -201,7 +201,7 @@ func handleSingleQuery(ctx context.Context, chatAgent *agent.ChatAgent, query st
 		Session:               sess,
 		PreGeneratedSessionID: sessionID,
 		OnStreamChunk: func(chunk string) {
-			fmt.Print(chunk)
+			_ = printer.PrintLLMContent(chunk) // Use StreamPrinter with FlushingWriter for real streaming
 		},
 	}
 
@@ -231,7 +231,7 @@ func handleSingleQuery(ctx context.Context, chatAgent *agent.ChatAgent, query st
 	return nil
 }
 
-func handleInteractiveChat(ctx context.Context, chatAgent *agent.ChatAgent, sessionID string, sess *session.Session) error {
+func handleInteractiveChat(ctx context.Context, chatAgent *agent.ChatAgent, sessionID string, sess *session.Session, printer *ui.StreamPrinter) error {
 	// Setup signal handler for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -282,7 +282,7 @@ func handleInteractiveChat(ctx context.Context, chatAgent *agent.ChatAgent, sess
 			Session:               sess,
 			PreGeneratedSessionID: sessionID,
 			OnStreamChunk: func(chunk string) {
-				fmt.Print(chunk)
+				_ = printer.PrintLLMContent(chunk) // Use StreamPrinter with FlushingWriter for real streaming
 			},
 		}
 

@@ -3,10 +3,44 @@ package ui
 import (
 	"fmt"
 	"io"
+	"os"
 	"time"
 
 	"github.com/fatih/color"
 )
+
+// FlushingWriter wraps an io.Writer and flushes after each write
+// It solves the streaming output buffer issue by calling os.File.Sync() after every write
+type FlushingWriter struct {
+	writer io.Writer  // Underlying writer (could be color.Color)
+	file   *os.File  // os.Stdout file reference for Sync()
+}
+
+// NewFlushingWriter creates a writer that flushes after each write
+func NewFlushingWriter(w io.Writer) *FlushingWriter {
+	fw := &FlushingWriter{writer: w}
+	if f, ok := w.(*os.File); ok {
+		fw.file = f
+	}
+	return fw
+}
+
+// Write implements io.Writer, flushing after each write
+func (w *FlushingWriter) Write(p []byte) (n int, err error) {
+	n, err = w.writer.Write(p)
+	if w.file != nil {
+		_ = w.file.Sync() // Cross-platform flush
+	}
+	return
+}
+
+// Flush implements the Flush method for compatibility
+func (w *FlushingWriter) Flush() error {
+	if w.file != nil {
+		return w.file.Sync()
+	}
+	return nil
+}
 
 // ExecutionStats holds statistics about the agent execution
 type ExecutionStats struct {
@@ -48,8 +82,20 @@ type StreamPrinter struct {
 
 // NewStreamPrinter creates a new StreamPrinter
 func NewStreamPrinter(writer io.Writer, opts ...StreamPrinterOption) *StreamPrinter {
+	var effectiveWriter io.Writer = writer
+
+	// Check if writer supports Flush interface
+	_, hasFlush := writer.(interface{ Flush() })
+
+	// If no Flush support and is os.File, wrap with FlushingWriter
+	if !hasFlush {
+		if _, ok := writer.(*os.File); ok {
+			effectiveWriter = NewFlushingWriter(writer)
+		}
+	}
+
 	p := &StreamPrinter{
-		writer:       writer,
+		writer:       effectiveWriter,
 		colorEnabled: true,
 		verbose:      false,
 	}
@@ -255,6 +301,14 @@ func (p *StreamPrinter) PrintToolArgStart() error {
 func (p *StreamPrinter) PrintToolArgEnd() error {
 	_, err := fmt.Fprintln(p.writer)
 	return err
+}
+
+// Flush explicitly flushes the underlying writer
+func (p *StreamPrinter) Flush() error {
+	if f, ok := p.writer.(Flusher); ok {
+		return f.Flush()
+	}
+	return nil
 }
 
 // formatDuration formats a duration in a human-readable format
