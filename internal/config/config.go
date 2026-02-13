@@ -194,7 +194,7 @@ type CommitConfig struct {
 func DefaultCommitConfig() *CommitConfig {
 	return &CommitConfig{
 		PrefetchEnabled: true,
-		LogCount:        5,
+		LogCount:        0, // Default: don't include git log in context
 	}
 }
 

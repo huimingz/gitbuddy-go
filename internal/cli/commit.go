@@ -16,11 +16,12 @@ import (
 )
 
 var (
-	commitContext  string
-	commitLanguage string
-	commitAutoYes  bool
-	commitLogCount int
+	commitContext    string
+	commitLanguage   string
+	commitAutoYes    bool
+	commitLogCount   int
 	commitNoPrefetch bool
+	commitIncludeLog bool
 )
 
 var commitCmd = &cobra.Command{
@@ -45,8 +46,9 @@ func init() {
 	commitCmd.Flags().StringVarP(&commitContext, "context", "c", "", "Additional context to help AI generate better message")
 	commitCmd.Flags().StringVarP(&commitLanguage, "language", "l", "", "Output language (en, zh, ja, etc.)")
 	commitCmd.Flags().BoolVarP(&commitAutoYes, "yes", "y", false, "Auto-confirm the commit without prompting")
-	commitCmd.Flags().IntVar(&commitLogCount, "log-count", 0, "Number of recent commits to include in context (default: 5)")
+	commitCmd.Flags().IntVar(&commitLogCount, "log-count", 0, "Number of recent commits to include in context (0 means no log)")
 	commitCmd.Flags().BoolVar(&commitNoPrefetch, "no-prefetch", false, "Disable prefetch mode and use tool calls")
+	commitCmd.Flags().BoolVar(&commitIncludeLog, "include-log", false, "Include git log in context (equivalent to --log-count 5)")
 	rootCmd.AddCommand(commitCmd)
 }
 
@@ -138,8 +140,15 @@ func runCommit(cmd *cobra.Command, args []string) error {
 	// Setup stream printer
 	printer := ui.NewStreamPrinter(os.Stdout, ui.WithVerbose(debugMode))
 
+	// Handle --include-log flag priority
+	// If --include-log is specified but --log-count is not, use default 5
+	effectiveLogCount := commitLogCount
+	if commitIncludeLog && commitLogCount == 0 {
+		effectiveLogCount = 5
+	}
+
 	// Get commit config
-	commitConfig := cfg.GetCommitConfig(commitLogCount, commitNoPrefetch)
+	commitConfig := cfg.GetCommitConfig(effectiveLogCount, commitNoPrefetch)
 
 	log.Debug("Commit config: prefetch_enabled=%v, log_count=%d", commitConfig.PrefetchEnabled, commitConfig.LogCount)
 

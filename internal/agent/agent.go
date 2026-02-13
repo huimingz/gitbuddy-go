@@ -315,10 +315,15 @@ func (a *CommitAgent) GenerateCommitMessage(ctx context.Context, req CommitReque
 	if a.opts.PrefetchEnabled {
 		printProgress("Pre-loading git information...")
 
-		// Execute git log
-		logResult, err := a.opts.GitExecutor.Log(ctx, git.LogOptions{Count: a.opts.LogCount})
-		if err != nil {
-			return nil, fmt.Errorf("failed to get git log: %w", err)
+		var logResult string
+		var err error
+
+		// Only execute git log if LogCount > 0
+		if a.opts.LogCount > 0 {
+			logResult, err = a.opts.GitExecutor.Log(ctx, git.LogOptions{Count: a.opts.LogCount})
+			if err != nil {
+				return nil, fmt.Errorf("failed to get git log: %w", err)
+			}
 		}
 
 		// Execute git status
@@ -338,11 +343,14 @@ func (a *CommitAgent) GenerateCommitMessage(ctx context.Context, req CommitReque
 		buf.WriteString("Please generate a commit message based on the following git information:\n\n")
 		buf.WriteString("<git_context>\n")
 
-		buf.WriteString("<git_log>\n")
-		if logResult != "" {
-			buf.WriteString(logResult)
+		// Only include git_log if it was fetched
+		if a.opts.LogCount > 0 {
+			buf.WriteString("<git_log>\n")
+			if logResult != "" {
+				buf.WriteString(logResult)
+			}
+			buf.WriteString("\n</git_log>\n\n")
 		}
-		buf.WriteString("\n</git_log>\n\n")
 
 		buf.WriteString("<git_status>\n")
 		if statusResult != "" {
@@ -364,7 +372,11 @@ func (a *CommitAgent) GenerateCommitMessage(ctx context.Context, req CommitReque
 		// Log prefetch performance metrics in debug mode
 		if a.opts.Debug {
 			log.Debug("Prefetch performance metrics:")
-			log.Debug("  git log: %d bytes (~%d tokens)", len(logResult), estimateTokenCount(logResult))
+			if a.opts.LogCount > 0 {
+				log.Debug("  git log: %d bytes (~%d tokens)", len(logResult), estimateTokenCount(logResult))
+			} else {
+				log.Debug("  git log: skipped (LogCount=0)")
+			}
 			log.Debug("  git status: %d bytes (~%d tokens)", len(statusResult), estimateTokenCount(statusResult))
 			log.Debug("  git diff: %d bytes (~%d tokens)", len(diffResult), estimateTokenCount(diffResult))
 			log.Debug("  total message: %d bytes (~%d tokens)", len(userMsg), estimateTokenCount(userMsg))
